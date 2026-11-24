@@ -27,7 +27,9 @@ import {
 import {
     buildItemEmailHandoff,
     EmailToneStyle,
+    getAvailableEmailTones,
     getEmailDraftInsights,
+    isRequestDeadlineMissed,
     launchGmailWebHandoffWithStatute,
     launchPortalHandoff,
     scheduleDeadlineReminder,
@@ -95,6 +97,7 @@ export function RequestDetailScreen({
     }
   });
   const [emailTone, setEmailTone] = useState<EmailToneStyle>('clear_professional');
+  const [userPickedTone, setUserPickedTone] = useState(false);
   const [preferredFormatInput, setPreferredFormatInput] = useState(() => {
     try {
       const saved =
@@ -335,6 +338,17 @@ export function RequestDetailScreen({
     setFeedbackBanner('Added note to chronological audit log.');
   };
 
+  const availableTones = getAvailableEmailTones(item);
+  const deadlineMissed = isRequestDeadlineMissed(item);
+  useEffect(() => {
+    if (userPickedTone) return;
+    if (deadlineMissed && emailTone !== 'deadline_follow_up') {
+      setEmailTone('deadline_follow_up');
+    } else if (!deadlineMissed && emailTone === 'deadline_follow_up') {
+      setEmailTone('sweet_courteous');
+    }
+  }, [deadlineMissed, emailTone, userPickedTone]);
+
   const draftInsights = getEmailDraftInsights(item, {
     requesterSignOff: signOffInput,
     preferredFormat: preferredFormatInput,
@@ -437,24 +451,30 @@ export function RequestDetailScreen({
           </Pressable>
         </View>
 
-        <Text style={styles.subLabel}>Email Tone & Style</Text>
-        <View style={styles.inlineRow}>
-          <Pressable
-            onPress={() => setEmailTone('firm_statutory')}
-            style={[styles.actionBtn, emailTone === 'firm_statutory' && styles.activeChipBtn]}>
-            <Text style={styles.actionBtnText}>Firm & Statutory</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setEmailTone('clear_professional')}
-            style={[styles.actionBtn, emailTone === 'clear_professional' && styles.activeChipBtn]}>
-            <Text style={styles.actionBtnText}>Clear & Professional</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setEmailTone('collaborative_concise')}
-            style={[styles.actionBtn, emailTone === 'collaborative_concise' && styles.activeChipBtn]}>
-            <Text style={styles.actionBtnText}>Collaborative & Concise</Text>
-          </Pressable>
+        <Text style={styles.subLabel}>Email Tone & Style (4 Active Modes)</Text>
+        <View style={styles.actionGrid}>
+          {availableTones.map((toneOption) => {
+            const selected = emailTone === toneOption.id;
+            return (
+              <Pressable
+                key={toneOption.id}
+                onPress={() => {
+                  setUserPickedTone(true);
+                  setEmailTone(toneOption.id);
+                  setFeedbackBanner(`Tone set to ${toneOption.label}.`);
+                }}
+                style={[styles.actionBtn, selected && styles.activeChipBtn]}
+              >
+                <Text style={[styles.actionBtnText, selected && styles.activeChipText]}>
+                  {toneOption.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
+        <Text style={styles.metaText}>
+          {(availableTones.find((t) => t.id === emailTone) || availableTones[0]).outcomeSummary}
+        </Text>
         <Text style={styles.metaText}>
           Detected: {draftInsights.detectedPatterns.map((p) => p.label).join(' · ')}
           {draftInsights.referencedCitations.length > 0

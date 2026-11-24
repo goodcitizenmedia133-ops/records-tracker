@@ -26,7 +26,12 @@ export interface AnyEmailHandoffBundle {
   clipboardText: string;
 }
 
-export type EmailToneStyle = 'firm_statutory' | 'clear_professional' | 'collaborative_concise';
+export type EmailToneStyle =
+  | 'firm_statutory'
+  | 'clear_professional'
+  | 'collaborative_concise'
+  | 'sweet_courteous'
+  | 'deadline_follow_up';
 
 export interface RequestLetterOptions {
   requesterSignOff?: string;
@@ -40,8 +45,66 @@ export interface RequestLetterOptions {
 
 export interface EmailDraftInsights {
   toneStyle: EmailToneStyle;
+  isDeadlineMissed: boolean;
   detectedPatterns: RequestPatternMatch[];
   referencedCitations: string[];
+}
+
+export interface EmailToneOption {
+  id: EmailToneStyle;
+  label: string;
+  outcomeSummary: string;
+}
+
+export function isRequestDeadlineMissed(
+  item?: Pick<PublicRecordItem, 'dueDate' | 'status'> | null,
+  todayIso?: string
+): boolean {
+  if (!item || !item.dueDate) return false;
+  const status = (item.status || '').toLowerCase();
+  if (status === 'fulfilled' || status === 'closed' || status === 'completed') return false;
+  const dueMatch = /^(\d{4}-\d{2}-\d{2})/.exec(item.dueDate.trim());
+  if (!dueMatch) return false;
+  const refDate = todayIso && /^\d{4}-\d{2}-\d{2}/.test(todayIso.trim())
+    ? todayIso.trim().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+  return dueMatch[1] < refDate;
+}
+
+export function getAvailableEmailTones(
+  item?: Pick<PublicRecordItem, 'dueDate' | 'status'> | null,
+  todayIso?: string
+): EmailToneOption[] {
+  const missed = isRequestDeadlineMissed(item, todayIso);
+  const fourthOption: EmailToneOption = missed
+    ? {
+        id: 'deadline_follow_up',
+        label: 'Deadline Follow-Up',
+        outcomeSummary: 'Flags missed statutory deadline and requests immediate status or written grounds.',
+      }
+    : {
+        id: 'sweet_courteous',
+        label: 'Sweet & Courteous',
+        outcomeSummary: 'Extra-gracious, warm outreach to staff while keeping full statutory citations.',
+      };
+  return [
+    {
+      id: 'firm_statutory',
+      label: 'Firm & Statutory',
+      outcomeSummary: 'Formal statutory enforcement, clock rules, and advance fee notice.',
+    },
+    {
+      id: 'clear_professional',
+      label: 'Clear & Professional',
+      outcomeSummary: 'Structured, direct request with clear scope, format, and target date.',
+    },
+    {
+      id: 'collaborative_concise',
+      label: 'Collaborative & Concise',
+      outcomeSummary: 'Short, low-friction request designed for fast custodian fulfillment.',
+    },
+    fourthOption,
+  ];
 }
 
 export function normalizeRecipientEmail(to?: string): string {
@@ -81,7 +144,11 @@ function getStatuteHeader(
       return {
         label: 'Freedom of Information Act (FOIA, 5 U.S.C. § 552)',
         windowNote:
-          'Under FOIA, I look forward to your determination within the statutory 20-business-day timeframe.',
+          toneStyle === 'sweet_courteous'
+            ? 'Under FOIA (5 U.S.C. § 552), I deeply appreciate your time and help and look forward to your determination within the statutory 20-business-day timeframe.'
+            : toneStyle === 'deadline_follow_up'
+              ? 'Follow-Up Under FOIA (5 U.S.C. § 552): The statutory determination timeframe has elapsed; please advise on current processing status and expected release date.'
+              : 'Under FOIA, I look forward to your determination within the statutory 20-business-day timeframe.',
       };
     default:
       return {
@@ -112,6 +179,7 @@ export function getEmailDraftInsights(
   }
   return {
     toneStyle,
+    isDeadlineMissed: isRequestDeadlineMissed(item),
     detectedPatterns,
     referencedCitations: Array.from(citationSet),
   };
@@ -351,8 +419,15 @@ export function buildItemEmailHandoff(
 ): AnyEmailHandoffBundle {
   const to = normalizeRecipientEmail(agency?.contactEmail);
   const agencyName = (agency?.name || item.agencyName || '').trim();
+  const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
   const shortTitle = cleanSubjectTitle(item.title, item.statuteCode);
-  const subject = `${item.statuteCode} Public Records Request: ${shortTitle} - ${agencyName}`;
+  const subjectPrefix =
+    toneStyle === 'deadline_follow_up'
+      ? `${item.statuteCode} Deadline Follow-Up`
+      : toneStyle === 'sweet_courteous'
+        ? `${item.statuteCode} Public Records Request (With Thanks)`
+        : `${item.statuteCode} Public Records Request`;
+  const subject = `${subjectPrefix}: ${shortTitle} - ${agencyName}`;
   const body = buildFormattedRequestText(item, agency, options);
   return buildAnyEmailHandoff({ to, subject, body });
 }
