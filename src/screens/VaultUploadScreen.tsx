@@ -226,7 +226,7 @@ export function VaultUploadScreen({ onBack }: VaultUploadScreenProps) {
         <TextInput
           value={extractedText}
           onChangeText={setExtractedText}
-          placeholder="Paste extracted PDF text to inspect jurisdiction, PII, or blank form status..."
+          placeholder="Paste extracted PDF text to check state/federal rules, personal info, or blank form status..."
           placeholderTextColor="#9CA3AF"
           multiline
           style={[styles.input, styles.textArea]}
@@ -271,7 +271,7 @@ export function VaultUploadScreen({ onBack }: VaultUploadScreenProps) {
                 </Text>
               ))
             : null}
-          <Text style={styles.sectionTitle}>Scrubbed Text Preview</Text>
+          <Text style={styles.sectionTitle}>Redacted Text Preview</Text>
           <Text style={styles.codeBox}>{outcome.guard.scrubbedText || '(No extracted text)'}</Text>
           <Text style={styles.sectionTitle}>Target GitHub File: {targetIndexFile}</Text>
           <Text style={styles.helper}>

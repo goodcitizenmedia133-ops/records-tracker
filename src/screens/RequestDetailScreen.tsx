@@ -866,7 +866,7 @@ export function RequestDetailScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Send &amp; Handoff Actions</Text>
+        <Text style={styles.sectionTitle}>Send &amp; Open Email</Text>
         <View style={styles.actionGrid}>
           <Pressable onPress={handleEmail} style={[styles.actionBtn, styles.primaryActionBtn]}>
             <Text style={styles.primaryActionBtnText}>
@@ -884,7 +884,7 @@ export function RequestDetailScreen({
             <Text style={styles.actionBtnText}>Open Default Mail</Text>
           </Pressable>
           <Pressable onPress={handleDownloadEml} style={styles.actionBtn}>
-            <Text style={styles.actionBtnText}>Download Draft (.eml)</Text>
+            <Text style={styles.actionBtnText}>Download Email File (.eml)</Text>
           </Pressable>
           {hasValidPortal ? (
             <Pressable onPress={handlePortal} style={styles.actionBtn}>
@@ -963,7 +963,7 @@ export function RequestDetailScreen({
                     return;
                   }
                   void persistRequestSender(acc.email, acc.label);
-                  setFeedbackBanner(`Request bound to sender: ${acc.label} (${acc.email})`);
+                  setFeedbackBanner(`Request set to send from: ${acc.label} (${acc.email})`);
                 }}
                 style={[styles.chipBtn, active && styles.chipBtnActive]}
               >
@@ -1015,7 +1015,7 @@ export function RequestDetailScreen({
         />
 
 
-        <Text style={styles.subLabel}>SMTP Mail Credentials for Bound Sender (saved locally)</Text>
+        <Text style={styles.subLabel}>Direct Mail Server Login for Selected Sender (saved on device)</Text>
         <View style={styles.inlineRow}>
           <TextInput
             value={smtpHostInput}
@@ -1167,7 +1167,7 @@ export function RequestDetailScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Chronological Audit Trail</Text>
+        <Text style={styles.sectionTitle}>Activity &amp; Date Log</Text>
         <View style={styles.emailHelperBox}>
           <Text style={styles.subLabel}>Import Email Reply / Correspondence</Text>
           {typeof document !== 'undefined' ? (
@@ -1188,7 +1188,7 @@ export function RequestDetailScreen({
           />
           <View style={styles.actionGrid}>
             <Pressable onPress={handleParseEmailText} style={styles.actionBtn}>
-              <Text style={styles.actionBtnText}>Preview &amp; Scrub</Text>
+              <Text style={styles.actionBtnText}>Preview &amp; Hide Info</Text>
             </Pressable>
             <Pressable
               onPress={() => setScrubEmailPii((prev) => !prev)}
