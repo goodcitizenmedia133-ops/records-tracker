@@ -169,7 +169,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
       ) : null}
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Vault Catalog &amp; Upload Wizard</Text>
+        <Text style={styles.sectionTitle}>Saved Records &amp; Upload Tool</Text>
         <Text style={styles.muted}>
           Browse indexed forms and reference records ({catalogEntries.length} available) or stage a new PDF/index entry.
         </Text>
@@ -360,7 +360,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Local JSON Vault Backup</Text>
+        <Text style={styles.sectionTitle}>Save or Restore All Data (JSON)</Text>
         <View style={styles.rowBtns}>
           <Pressable
             onPress={() => void handleExportBackup()}

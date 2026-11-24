@@ -273,11 +273,11 @@ export function VaultUploadScreen({ onBack }: VaultUploadScreenProps) {
             : null}
           <Text style={styles.sectionTitle}>Redacted Text Preview</Text>
           <Text style={styles.codeBox}>{outcome.guard.scrubbedText || '(No extracted text)'}</Text>
-          <Text style={styles.sectionTitle}>Target GitHub File: {targetIndexFile}</Text>
+          <Text style={styles.sectionTitle}>Catalog File: {targetIndexFile}</Text>
           <Text style={styles.helper}>
             Paste this JSON object inside the [ ... ] array in {targetIndexFile} on {DEFAULT_VAULT_CONFIG.githubIndexRepo}.
           </Text>
-          <Text style={styles.sectionTitle}>GitHub Index Entry JSON</Text>
+          <Text style={styles.sectionTitle}>Saved Record Details</Text>
           {outcome.publicUrl ? <Text style={styles.helper}>Index Asset URL: {outcome.publicUrl}</Text> : null}
           <Text style={styles.codeBox}>{outcome.catalogJsonSnippet}</Text>
           <Pressable onPress={() => void copyIndexJson(outcome.catalogJsonSnippet)} style={styles.copyBtn}>

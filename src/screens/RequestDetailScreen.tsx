@@ -1093,7 +1093,7 @@ export function RequestDetailScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Status &amp; Statutory Clock</Text>
+        <Text style={styles.sectionTitle}>Status &amp; Response Deadline</Text>
         <Pressable
           onPress={() => void handleStatusChange('sent')}
           style={[styles.actionBtn, styles.primaryActionBtn]}
@@ -1146,7 +1146,7 @@ export function RequestDetailScreen({
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Compliance &amp; Audit Packet</Text>
+        <Text style={styles.sectionTitle}>Replies, Exports &amp; Records</Text>
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>
             Hide Personal Info (SSN, phone, email, address) on export
