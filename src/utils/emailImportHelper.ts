@@ -119,7 +119,7 @@ export function buildCorrespondenceAuditNote(parsed: ParsedEmailImport): string 
     .filter(Boolean)
     .join(' ');
 
-  const cleanBody = parsed.bodyText.replace(/s+/g, ' ').trim().slice(0, 1000);
+  const cleanBody = parsed.bodyText.replace(/\s+/g, ' ').trim().slice(0, 1000);
   const indexTags = [
     '[EMAIL_IMPORT]',
     parsed.suggestedStatus ? `status_hint=${parsed.suggestedStatus}` : '',

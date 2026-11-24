@@ -393,7 +393,7 @@ export function RequestDetailScreen({
           <Text style={styles.backBtnText}>← Back</Text>
         </Pressable>
         <Text style={styles.statuteBadge}>
-          {statute.code} • {statute.citation}
+          {statute.code} · {statute.citation}
         </Text>
       </View>
 
@@ -456,9 +456,9 @@ export function RequestDetailScreen({
           </Pressable>
         </View>
         <Text style={styles.metaText}>
-          Detected: {draftInsights.detectedPatterns.map((p) => p.label).join(' ? ')}
+          Detected: {draftInsights.detectedPatterns.map((p) => p.label).join(' · ')}
           {draftInsights.referencedCitations.length > 0
-            ? ` | CORA Sections: ${draftInsights.referencedCitations.join(', ')}`
+            ? ` | {statuteCode} Sections: ${draftInsights.referencedCitations.join(', ')}`
             : ''}
         </Text>
 
@@ -607,7 +607,7 @@ export function RequestDetailScreen({
               <Text style={styles.previewMeta}>
                 Date: {parsedEmail.dateLabel}
                 {parsedEmail.detectedFeeDollars
-                  ? ` ? Fee Found: ${parsedEmail.detectedFeeDollars}`
+                  ? ` · Fee Found: ${parsedEmail.detectedFeeDollars}`
                   : ''}
               </Text>
               {parsedEmail.suggestedStatus ? (
@@ -683,8 +683,8 @@ export function RequestDetailScreen({
               >
                 <View style={styles.auditHeaderRow}>
                   <Text style={styles.auditMeta}>
-                    {entry.action} ? {entry.createdAt.slice(0, 16).replace('T', ' ')}
-                    {isArchived ? ' ? ARCHIVED' : ''}
+                    {entry.action} · {entry.createdAt.slice(0, 16).replace('T', ' ')}
+                    {isArchived ? ' · ARCHIVED' : ''}
                   </Text>
                   <Pressable
                     onPress={() => {

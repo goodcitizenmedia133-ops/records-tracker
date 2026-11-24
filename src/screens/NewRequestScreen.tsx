@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StrategyCardList } from '../components/StrategyCardList';
 import { addWorkingDays, getTodayCalendarDate, StatuteCode, STATUTES } from '../data/statutes';
 import { addAuditEntry, getAllAgencies, saveAgency, upsertItem } from '../services/database';
 import { findVaultPatternHints } from '../services/requestComposer';
 import { JurisdictionCode } from '../services/vaultCatalog';
+import { buildSplitChildItems, classifyRequestInput } from '../services/wizardEngine';
 import { AgencyRecord, PublicRecordItem } from '../types/models';
 
 interface NewRequestScreenProps {
@@ -17,6 +19,7 @@ const STATUTE_LIST: StatuteCode[] = ['CORA', 'CCJRA', 'FOIA'];
 
 export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRequestScreenProps) {
   const [statuteCode, setStatuteCode] = useState<StatuteCode>('CORA');
+  const [statuteManuallyPicked, setStatuteManuallyPicked] = useState(false);
   const [agencyName, setAgencyName] = useState('');
   const [custodianEmail, setCustodianEmail] = useState('');
   const [title, setTitle] = useState('');
@@ -39,6 +42,24 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
       active = false;
     };
   }, []);
+
+  const selectedAgency = useMemo(() => {
+    const q = agencyName.trim().toLowerCase();
+    if (!q) return null;
+    return savedAgencies.find((a) => a.name.toLowerCase() === q) ?? null;
+  }, [agencyName, savedAgencies]);
+
+  const wizardPrompt = [agencyName, title, summary].filter(Boolean).join(' ').trim();
+  const classification = useMemo(
+    () => classifyRequestInput(wizardPrompt, selectedAgency),
+    [wizardPrompt, selectedAgency]
+  );
+
+  useEffect(() => {
+    if (!statuteManuallyPicked && wizardPrompt.length > 0) {
+      setStatuteCode(classification.suggestedStatute);
+    }
+  }, [classification.suggestedStatute, statuteManuallyPicked, wizardPrompt.length]);
 
   const jurisdiction: JurisdictionCode = statuteCode === 'FOIA' ? 'US-FED' : 'US-CO';
   const stateCode = statuteCode === 'FOIA' ? 'US' : 'CO';
@@ -66,20 +87,101 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
     const upperStatute = (agency.defaultStatute || '').toUpperCase();
     if (upperStatute === 'CORA' || upperStatute === 'CCJRA' || upperStatute === 'FOIA') {
       setStatuteCode(upperStatute);
+      setStatuteManuallyPicked(true);
     }
   };
 
   const handleApplyHint = (hintTitle: string) => {
     setSummary((prev) =>
       prev.trim()
-        ? prev.trim() + '\nReference pattern: ' + hintTitle
-        : 'Reference pattern: ' + hintTitle
+        ? `${prev.trim()}\nReference pattern: ${hintTitle}`
+        : `Reference pattern: ${hintTitle}`
     );
+  };
+
+  const handleAppendClause = (clauseText: string) => {
+    setSummary((prev) => {
+      if (prev.includes(clauseText)) return prev;
+      return prev.trim() ? `${prev.trim()}\n\n${clauseText}` : clauseText;
+    });
   };
 
   const handleClose = () => {
     if (onCancel) onCancel();
     else if (onBack) onBack();
+  };
+
+  const handleCreateSplitDrafts = async () => {
+    const cleanAgency = agencyName.trim();
+    if (!cleanAgency || classification.splitSuggestions.length === 0) return;
+    setSaving(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const cleanCustodian = custodianEmail.trim();
+      const existing = savedAgencies.find(
+        (a) => a.name.toLowerCase() === cleanAgency.toLowerCase()
+      );
+      const agencyRecord: AgencyRecord = {
+        id: existing ? existing.id : `ag-${Date.now()}`,
+        name: cleanAgency,
+        jurisdiction: existing?.jurisdiction || jurisdiction,
+        stateCode: existing?.stateCode || stateCode,
+        contactEmail: cleanCustodian || existing?.contactEmail || '',
+        portalUrl: existing?.portalUrl || '',
+        defaultStatute: statuteCode,
+        formPdfRelativePath: existing?.formPdfRelativePath || '',
+      };
+      await saveAgency(agencyRecord);
+      setSavedAgencies((prev) => {
+        const next = prev.filter((a) => a.id !== agencyRecord.id);
+        return [agencyRecord, ...next];
+      });
+
+      const dueDate = addWorkingDays(
+        getTodayCalendarDate(),
+        STATUTES[statuteCode].defaultWorkingDays
+      );
+      const parentItem: PublicRecordItem = {
+        id: `req-${Date.now()}`,
+        agencyId: agencyRecord.id,
+        agencyName: agencyRecord.name,
+        title: title.trim() || classification.suggestedTitle,
+        summary: summary.trim(),
+        notes: '',
+        parentItemId: null,
+        batchLabel: title.trim() || classification.suggestedTitle,
+        statuteCode,
+        status: 'draft',
+        sentAt: null,
+        dueDate,
+        feeQuoted: null,
+        sentEmailProof: null,
+        responseEmailProof: null,
+        createdAt: nowIso,
+      };
+      const children = buildSplitChildItems(parentItem, classification.splitSuggestions);
+      for (const child of children) {
+        await upsertItem(child);
+        await addAuditEntry({
+          id: `aud-${Date.now()}-${child.id}`,
+          itemId: child.id,
+          action: 'REQUEST_CREATED',
+          detail: `Created split ${statuteCode} draft for ${agencyRecord.name}: ${child.title}`,
+          createdAt: nowIso,
+        });
+      }
+      if (children[0]) {
+        setCreatedItem(children[0]);
+        if (onSaved) onSaved(children[0]);
+        if (onCreated) onCreated(children[0].id);
+      }
+      Alert.alert(
+        'Split Drafts Created',
+        `Created ${children.length} focused ${statuteCode} drafts for ${agencyRecord.name}.`
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -159,20 +261,23 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
     >
       <View style={styles.topBar}>
         <Pressable onPress={handleClose} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>Back</Text>
+          <Text style={styles.backBtnText}>← Back</Text>
         </Pressable>
-        <Text style={styles.badge}>New Request Builder</Text>
+        <Text style={styles.badge}>Request Wizard</Text>
       </View>
 
       <Text style={styles.title}>Build Public Records Request</Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Statute</Text>
+        <Text style={styles.label}>Statute (Auto-Suggested: {classification.suggestedStatute} · Vault: {jurisdiction})</Text>
         <View style={styles.row}>
           {STATUTE_LIST.map((code) => (
             <Pressable
               key={code}
-              onPress={() => setStatuteCode(code)}
+              onPress={() => {
+                setStatuteCode(code);
+                setStatuteManuallyPicked(true);
+              }}
               style={[styles.chip, statuteCode === code && styles.chipActive]}
             >
               <Text style={[styles.chipText, statuteCode === code && styles.chipTextActive]}>
@@ -181,12 +286,24 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
             </Pressable>
           ))}
         </View>
+        {wizardPrompt.length > 0 && statuteManuallyPicked && statuteCode !== classification.suggestedStatute ? (
+          <Pressable
+            onPress={() => {
+              setStatuteCode(classification.suggestedStatute);
+              setStatuteManuallyPicked(false);
+            }}
+          >
+            <Text style={styles.autoSuggestLink}>
+              Use predictive suggestion: {classification.suggestedStatute}
+            </Text>
+          </Pressable>
+        ) : null}
 
         <Text style={styles.label}>Agency Name</Text>
         <TextInput
           value={agencyName}
           onChangeText={setAgencyName}
-          placeholder='e.g. City of Walsenburg'
+          placeholder='e.g. City of Walsenburg or BLM Royal Gorge Field Office'
           placeholderTextColor='#9CA3AF'
           style={styles.input}
         />
@@ -226,7 +343,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
         <TextInput
           value={title}
           onChangeText={setTitle}
-          placeholder='e.g. Municipal contract & correspondence records'
+          placeholder='e.g. Police dispatch log or municipal contract records'
           placeholderTextColor='#9CA3AF'
           style={styles.input}
         />
@@ -241,6 +358,15 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
           style={[styles.input, styles.textArea]}
         />
 
+        {wizardPrompt.length > 0 ? (
+          <StrategyCardList
+            cards={classification.strategyCards}
+            onInsertClause={handleAppendClause}
+            splitSuggestions={classification.splitSuggestions}
+            onApplySplit={() => void handleCreateSplitDrafts()}
+          />
+        ) : null}
+
         {patternHints.length > 0 ? (
           <View style={styles.hintBox}>
             <Text style={styles.hintHeading}>Vault Form & Record Hints ({jurisdiction})</Text>
@@ -251,7 +377,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
                 style={styles.hintChip}
               >
                 <Text style={styles.hintChipTitle}>{hint.title}</Text>
-                <Text style={styles.hintChipMeta}>{hint.kind.toUpperCase()} - Tap to add</Text>
+                <Text style={styles.hintChipMeta}>{hint.kind.toUpperCase()} · Tap to add</Text>
               </Pressable>
             ))}
           </View>
@@ -317,6 +443,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   label: { fontSize: 13, fontWeight: '700', color: '#374151' },
+  autoSuggestLink: { fontSize: 12, fontWeight: '700', color: '#1D4ED8' },
   row: { flexDirection: 'row', gap: 8 },
   chip: {
     flex: 1,
