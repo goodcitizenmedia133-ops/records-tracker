@@ -42,6 +42,23 @@ export function DashboardScreen({
   const [statusFilter, setStatusFilter] = useState<RecordStatus | 'all'>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showGuide, setShowGuide] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem('gcm_hide_starter_guide') !== '1';
+      }
+    } catch {}
+    return true;
+  });
+
+  const toggleGuide = (visible: boolean) => {
+    setShowGuide(visible);
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('gcm_hide_starter_guide', visible ? '0' : '1');
+      }
+    } catch {}
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -98,18 +115,52 @@ export function DashboardScreen({
           <Text style={styles.headerTitle}>Records Tracker</Text>
           <Text style={styles.headerSub}>Saved locally · Response due date tracker</Text>
         </View>
-        <Pressable
-          onPress={onCreateNew}
-          style={({ pressed }) => [
-            styles.newBtn,
-            pressed && styles.btnPressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Create new records request"
-        >
-          <Text style={styles.newBtnText}>+ New Request</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => toggleGuide(!showGuide)}
+            style={({ pressed }) => [
+              styles.guideToggleBtn,
+              pressed && styles.btnPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={showGuide ? 'Hide quick walkthrough' : 'Show quick walkthrough'}
+          >
+            <Text style={styles.guideToggleText}>{showGuide ? 'Hide Guide' : 'Guide'}</Text>
+          </Pressable>
+          <Pressable
+            onPress={onCreateNew}
+            style={({ pressed }) => [
+              styles.newBtn,
+              pressed && styles.btnPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Create new records request"
+          >
+            <Text style={styles.newBtnText}>+ New Request</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {showGuide ? (
+        <View style={styles.guideCard}>
+          <View style={styles.guideHeader}>
+            <Text style={styles.guideTitle}>Quick Walkthrough: First Request</Text>
+            <Pressable onPress={() => toggleGuide(false)} accessibilityRole="button">
+              <Text style={styles.guideDismiss}>Dismiss</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.guideStep}>1. Tap "+ New Request" to pick the agency, statute, summary, and your sign-off.</Text>
+          <Text style={styles.guideStep}>2. Open the request to review the letter, set your sender account, and launch mail or copy the full packet.</Text>
+          <Text style={styles.guideStep}>3. Tap "Mark as sent" once sent so the tracker logs the filing date and statutory due date.</Text>
+          <Pressable
+            onPress={onCreateNew}
+            style={({ pressed }) => [styles.guideCtaBtn, pressed && styles.btnPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.guideCtaText}>Start First Request</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
@@ -352,5 +403,66 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  guideToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+  },
+  guideToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  guideCard: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    gap: 6,
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  guideTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  guideDismiss: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  guideStep: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#1E293B',
+  },
+  guideCtaBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 7,
+    backgroundColor: '#1D4ED8',
+  },
+  guideCtaText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
