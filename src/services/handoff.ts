@@ -360,8 +360,9 @@ export function buildGmailComposeUrl(payload: HandoffPayload): string {
   if (payload.subject.trim()) {
     queryParts.push(`su=${encodeURIComponent(payload.subject.trim())}`);
   }
-  if (payload.body.trim()) {
-    queryParts.push(`body=${encodeURIComponent(payload.body)}`);
+  const encodedBody = payload.body.trim() ? encodeURIComponent(payload.body) : '';
+  if (encodedBody && encodedBody.length <= 1600) {
+    queryParts.push(`body=${encodedBody}`);
   }
   return `https://mail.google.com/mail/?${queryParts.join('&')}`;
 }
@@ -767,7 +768,7 @@ export async function launchProviderWebmailHandoff(
   }
 
   let copiedPacket = false;
-  if (id === 'proton') {
+  if (id === 'proton' || id === 'gmail') {
     copiedPacket = await copyPacketTextToClipboard(packetText);
   }
 
