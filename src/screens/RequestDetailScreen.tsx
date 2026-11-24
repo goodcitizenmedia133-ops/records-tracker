@@ -867,9 +867,14 @@ export function RequestDetailScreen({
       </View>
 
       {feedbackBanner ? (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>{feedbackBanner}</Text>
-        </View>
+        <Pressable
+          onPress={() => setFeedbackBanner(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss status message"
+          style={styles.banner}
+        >
+          <Text style={styles.bannerText}>{feedbackBanner}  ·  Tap to dismiss</Text>
+        </Pressable>
       ) : null}
 
       <Text style={styles.agency}>{item.agencyName}</Text>
