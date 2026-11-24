@@ -19,9 +19,9 @@ export interface VaultCatalogEntry {
 const LOCAL_STAGED_CATALOG_KEY = 'gcm_vault_staged_entries_v1';
 
 export const BUNDLED_CATALOG: VaultCatalogEntry[] = [
-  { id: 'statute-co-cora', kind: 'statute', jurisdiction: 'US-CO', code: 'CORA', title: 'Colorado Open Records Act', citation: 'C.R.S. ?? 24-72-200.1?206', responseWindowNote: '3 working days (up to +7 working days under C.R.S. ? 24-72-203(3)(b))', tags: ['cora','colorado','public-records'] },
-  { id: 'statute-co-ccjra', kind: 'statute', jurisdiction: 'US-CO', code: 'CCJRA', title: 'Colorado Criminal Justice Records Act', citation: 'C.R.S. ?? 24-72-301?309', responseWindowNote: 'Prompt inspection/production per C.R.S. ? 24-72-301 et seq.', tags: ['ccjra','colorado','criminal-justice','dispatch','incident'] },
-  { id: 'statute-fed-foia', kind: 'statute', jurisdiction: 'US-FED', code: 'FOIA', title: 'Freedom of Information Act', citation: '5 U.S.C. ? 552', responseWindowNote: '20 business days (up to +10 business days under 5 U.S.C. ? 552(a)(6)(B))', tags: ['foia','federal'] },
+  { id: 'statute-co-cora', kind: 'statute', jurisdiction: 'US-CO', code: 'CORA', title: 'Colorado Open Records Act', citation: 'C.R.S. §§ 24-72-200.1–206', responseWindowNote: '3 working days (up to +7 working days under C.R.S. § 24-72-203(3)(b))', tags: ['cora','colorado','public-records'] },
+  { id: 'statute-co-ccjra', kind: 'statute', jurisdiction: 'US-CO', code: 'CCJRA', title: 'Colorado Criminal Justice Records Act', citation: 'C.R.S. §§ 24-72-301–309', responseWindowNote: 'Prompt inspection/production per C.R.S. § 24-72-301 et seq.', tags: ['ccjra','colorado','criminal-justice','dispatch','incident'] },
+  { id: 'statute-fed-foia', kind: 'statute', jurisdiction: 'US-FED', code: 'FOIA', title: 'Freedom of Information Act', citation: '5 U.S.C. § 552', responseWindowNote: '20 business days (up to +10 business days under 5 U.S.C. § 552(a)(6)(B))', tags: ['foia','federal'] },
 ];
 
 export function readLocalStagedCatalogEntries(): VaultCatalogEntry[] {
@@ -65,7 +65,7 @@ export function formatCatalogCommitPayload(entry: VaultCatalogEntry, jurisdictio
 
 export async function loadVaultCatalog(jurisdiction?: JurisdictionCode): Promise<VaultCatalogEntry[]> {
   const repo = (process.env.EXPO_PUBLIC_VAULT_GITHUB_REPO || DEFAULT_VAULT_CONFIG.githubIndexRepo).trim();
-  const branch = (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || 'main');
+  const branch = (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || DEFAULT_VAULT_CONFIG.githubIndexBranch || 'master').trim();
   const localStaged = readLocalStagedCatalogEntries();
   const filterByJurisdiction = (items: VaultCatalogEntry[]) =>
     jurisdiction ? items.filter((item) => item.jurisdiction === jurisdiction) : items;

@@ -18,9 +18,9 @@ export interface VaultPublishOutcome {
 }
 
 export const DEFAULT_VAULT_CONFIG: VaultConfig = {
-  r2PublicBaseUrl: (process.env.EXPO_PUBLIC_VAULT_R2_BASE_URL || 'https://github.com/good-citizen-media/records-vault-index/releases/download/vault-pdfs').trim(),
+  r2PublicBaseUrl: (process.env.EXPO_PUBLIC_VAULT_R2_BASE_URL || 'https://github.com/goodcitizenmedia133-ops/records-vault-index/releases/download/vault-pdfs').trim(),
   githubIndexRepo: (process.env.EXPO_PUBLIC_VAULT_GITHUB_REPO || 'good-citizen-media/records-vault-index').trim(),
-  githubIndexBranch: (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || 'main').trim(),
+  githubIndexBranch: (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || 'master').trim(),
   presignedUploadEndpoint: (process.env.EXPO_PUBLIC_VAULT_PRESIGN_ENDPOINT || '/api/vault/publish').trim(),
 };
 
