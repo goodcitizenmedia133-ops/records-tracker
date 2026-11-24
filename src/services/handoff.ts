@@ -724,3 +724,58 @@ export async function launchProviderWebmailHandoff(
     message: `Could not open ${provider.providerName} automatically for ${sender || 'your selected sender'}. Use Copy Email Packet or Download Draft (.eml) and paste into your ${provider.providerName} account.`,
   };
 }
+
+export interface SmtpSenderConfig {
+  host?: string;
+  port?: number;
+  secure?: boolean;
+  user?: string;
+  pass?: string;
+}
+
+export async function sendDirectSmtpEmail(params: {
+  from: string;
+  to: string;
+  subject: string;
+  text: string;
+  smtp?: SmtpSenderConfig;
+}): Promise<HandoffResult> {
+  const from = (params.from || '').trim();
+  const to = (params.to || '').trim();
+  const subject = (params.subject || '').trim();
+  const text = params.text || '';
+
+  if (!from || !from.includes('@')) {
+    return { ok: false, message: 'Select or enter a valid From sender email first.' };
+  }
+  if (!to || !to.includes('@')) {
+    return { ok: false, message: 'Enter a valid To custodian email address before sending.' };
+  }
+  if (!subject) {
+    return { ok: false, message: 'Email subject cannot be empty.' };
+  }
+
+  try {
+    const resp = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, subject, text, smtp: params.smtp }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data?.ok) {
+      return {
+        ok: false,
+        message: data?.error || `Direct send from ${from} failed (HTTP ${resp.status}).`,
+      };
+    }
+    return {
+      ok: true,
+      message: `Sent directly from ${from} to ${to}${data.messageId ? ` (ID: ${data.messageId})` : ''}.`,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      message: err?.message || `Network error sending directly from ${from}.`,
+    };
+  }
+}

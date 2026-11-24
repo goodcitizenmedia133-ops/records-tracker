@@ -38,6 +38,7 @@ import {
     getProviderWebmailInfo,
     launchDefaultMailtoHandoff,
     launchProviderWebmailHandoff,
+  sendDirectSmtpEmail,
     EmailToneStyle,
     getAvailableEmailTones,
     getEmailDraftInsights,
@@ -118,6 +119,24 @@ export function RequestDetailScreen({
   const [pendingSwitchSender, setPendingSwitchSender] = useState<string | null>(null);
   const [pendingSendConfirmation, setPendingSendConfirmation] = useState(false);
   const [showSenderPickerBeforeLaunch, setShowSenderPickerBeforeLaunch] = useState(false);
+  const [composerSubject, setComposerSubject] = useState('');
+  const [composerBody, setComposerBody] = useState('');
+  const [composerDirty, setComposerDirty] = useState(false);
+  const [smtpHostInput, setSmtpHostInput] = useState('');
+  const [smtpPortInput, setSmtpPortInput] = useState('587');
+  const [smtpPassInput, setSmtpPassInput] = useState('');
+  const [smtpCredentialsByEmail, setSmtpCredentialsByEmail] = useState<Record<string, { host?: string; port?: number; pass?: string }>>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem('gcm_sender_smtp_v1');
+        if (raw) return JSON.parse(raw);
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    return {};
+  });
+  const [isSendingDirect, setIsSendingDirect] = useState(false);
   const [copiedPacketFeedback, setCopiedPacketFeedback] = useState(false);
   const [copiedHeaderFeedback, setCopiedHeaderFeedback] = useState(false);
   const [newSenderLabel, setNewSenderLabel] = useState('');
@@ -274,7 +293,7 @@ export function RequestDetailScreen({
     const filingClock = computeEffectiveFilingDate(nowIso, agencyLocationHint);
     const nextDue =
       nextStatus === 'sent' && !item.dueDate
-        ? addWorkingDays(filingClock.effectiveReceiptDateYmd, statute.defaultWorkingDays)
+        ? addWorkingDays(getTodayCalendarDate(agencyTimeZone), statute.defaultWorkingDays)
         : item.dueDate;
 
     const updated: PublicRecordItem = {
@@ -305,7 +324,7 @@ export function RequestDetailScreen({
     const senderTag = activeSender ? ` via ${activeSender}` : '';
     const clockNote =
       nextStatus === 'sent'
-        ? ` [${filingClock.reason}]`
+        ? ` [${getTodayCalendarDate(agencyTimeZone)} ${agencyTimeZone}]`
         : ` [${filingClock.observedDateYmd} ${filingClock.zoneAbbr}]`;
     const updatedWithSender: PublicRecordItem = {
       ...updated,
@@ -321,10 +340,11 @@ export function RequestDetailScreen({
     );
     setFeedbackBanner(
       nextStatus === 'sent' && filingClock.rolledNextBusinessDay
-        ? `Marked SENT · Receipt rolled to ${filingClock.effectiveReceiptDateYmd} (${filingClock.zoneAbbr} cutoff/weekend/holiday) · Due ${nextDue}.`
+        ? `Marked SENT · Receipt rolled to ${getTodayCalendarDate(agencyTimeZone)} (${filingClock.zoneAbbr} cutoff/weekend/holiday) · Due ${nextDue}.`
         : `Status updated to ${nextStatus.toUpperCase()} (${filingClock.zoneAbbr}).`
     );
   };
+
 
   const handleApplyExtension = async () => {
     const baseDate = item.dueDate || getTodayCalendarDate(agencyTimeZone);
@@ -544,12 +564,24 @@ export function RequestDetailScreen({
       { label: cleanLabel, email: cleanEmail },
     ];
     setSenderAccounts(next);
+    const parsedPort = Number(smtpPortInput) || 587;
+    const nextCreds = {
+      ...smtpCredentialsByEmail,
+      [cleanEmail.toLowerCase()]: {
+        host: smtpHostInput.trim() || undefined,
+        port: parsedPort,
+        pass: smtpPassInput || smtpCredentialsByEmail[cleanEmail.toLowerCase()]?.pass || undefined,
+      },
+    };
+    setSmtpCredentialsByEmail(nextCreds);
     void persistRequestSender(cleanEmail, cleanLabel);
     setNewSenderLabel('');
     setNewSenderEmail('');
+    setSmtpPassInput('');
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem('gcm_sender_accounts_v1', JSON.stringify(next));
+        window.localStorage.setItem('gcm_sender_smtp_v1', JSON.stringify(nextCreds));
       }
     } catch {
       // ignore storage errors
@@ -597,6 +629,69 @@ export function RequestDetailScreen({
   const hasValidPortal =
     /^https?:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(livePortalUrl) &&
     !/\.(example|placeholder|test|invalid)\.(gov|com|org|net)(\/|$)/i.test(livePortalUrl);
+
+
+  const activeSenderEmail = (selectedSenderEmail || item.senderEmail || '').trim();
+  const effectiveSubject = composerDirty ? composerSubject : emailBundle.subject;
+  const effectiveBody = composerDirty ? composerBody : emailBundle.body;
+
+  const handleDirectSendAndLog = async () => {
+    if (!activeSenderEmail) {
+      setShowSenderPickerBeforeLaunch(true);
+      setFeedbackBanner('Pick or add the sender email account you want to send from first.');
+      return;
+    }
+    const targetTo = (emailBundle.to || agency?.contactEmail || '').trim();
+    if (!targetTo) {
+      setFeedbackBanner('Enter a custodian recipient email before sending.');
+      return;
+    }
+    setIsSendingDirect(true);
+    try {
+      const savedSmtp = smtpCredentialsByEmail[activeSenderEmail.toLowerCase()] || {};
+      const sendRes = await sendDirectSmtpEmail({
+        from: activeSenderEmail,
+        to: targetTo,
+        subject: effectiveSubject,
+        text: effectiveBody,
+        smtp: {
+          host: smtpHostInput.trim() || savedSmtp.host,
+          port: Number(smtpPortInput) || savedSmtp.port || 587,
+          user: activeSenderEmail,
+          pass: smtpPassInput || savedSmtp.pass,
+        },
+      });
+      if (!sendRes.ok) {
+        setFeedbackBanner(sendRes.message);
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      const nextDue =
+        !item.dueDate
+          ? addWorkingDays(getTodayCalendarDate(agencyTimeZone), statute.defaultWorkingDays)
+          : item.dueDate;
+      const updatedSent: PublicRecordItem = {
+        ...item,
+        status: 'sent',
+        sentAt: item.sentAt || nowIso,
+        dueDate: nextDue,
+        senderEmail: activeSenderEmail,
+        senderLabel:
+          senderAccounts.find((a) => a.email.toLowerCase() === activeSenderEmail.toLowerCase())?.label ||
+          item.senderLabel ||
+          null,
+      };
+      await recordChange(
+        updatedSent,
+        'STATUS_SENT',
+        `Sent directly from ${activeSenderEmail} to ${targetTo} (Subject: "${effectiveSubject}")${nextDue ? ` · Due ${nextDue}` : ''} [${`Direct SMTP dispatch (${getTodayCalendarDate(agencyTimeZone)} ${agencyTimeZone})`}]`
+      );
+      setFeedbackBanner(`Sent from ${activeSenderEmail} to ${targetTo} and logged as SENT.${nextDue ? ` Due: ${nextDue}.` : ''}`);
+    } finally {
+      setIsSendingDirect(false);
+    }
+  };
+
 
   const handleCopyHeaderMeta = async () => {
     const line = [
@@ -862,6 +957,75 @@ export function RequestDetailScreen({
           placeholderTextColor="#9CA3AF"
           style={styles.input}
         />
+
+
+        <Text style={styles.subLabel}>SMTP Mail Credentials for Bound Sender (saved locally)</Text>
+        <View style={styles.inlineRow}>
+          <TextInput
+            value={smtpHostInput}
+            onChangeText={setSmtpHostInput}
+            placeholder="SMTP host (e.g. smtp.comcast.net)"
+            placeholderTextColor="#9CA3AF"
+            autoCapitalize="none"
+            style={[styles.input, { flex: 1 }]}
+          />
+          <TextInput
+            value={smtpPortInput}
+            onChangeText={setSmtpPortInput}
+            placeholder="587"
+            placeholderTextColor="#9CA3AF"
+            keyboardType="number-pad"
+            style={[styles.input, { width: 76 }]}
+          />
+        </View>
+        <TextInput
+          value={smtpPassInput}
+          onChangeText={setSmtpPassInput}
+          placeholder="Mail / App Password for selected sender account"
+          placeholderTextColor="#9CA3AF"
+          secureTextEntry
+          style={styles.input}
+        />
+
+        <Text style={styles.subLabel}>Compose Email Inside App (Exact From &amp; To)</Text>
+        <Text style={styles.previewMeta}>
+          From: {activeSenderEmail || '(none bound — choose sender above)'}
+        </Text>
+        <Text style={styles.previewMeta}>
+          To: {emailBundle.to || '(enter custodian email on agency/request)'}
+        </Text>
+        <TextInput
+          value={effectiveSubject}
+          onChangeText={(val) => {
+            setComposerDirty(true);
+            setComposerSubject(val);
+          }}
+          placeholder="Email Subject"
+          placeholderTextColor="#9CA3AF"
+          style={styles.input}
+        />
+        <TextInput
+          value={effectiveBody}
+          onChangeText={(val) => {
+            setComposerDirty(true);
+            setComposerBody(val);
+          }}
+          placeholder="Compose request email body..."
+          placeholderTextColor="#9CA3AF"
+          multiline
+          style={[styles.input, { minHeight: 150, textAlignVertical: 'top' }]}
+        />
+        <Pressable
+          onPress={handleDirectSendAndLog}
+          disabled={isSendingDirect}
+          style={[styles.actionBtn, styles.primaryActionBtn]}
+        >
+          <Text style={styles.primaryActionBtnText}>
+            {isSendingDirect
+              ? `Sending from ${activeSenderEmail || 'Sender'}...`
+              : `Send Directly from ${activeSenderEmail || 'Bound Account'} & Log SENT`}
+          </Text>
+        </Pressable>
 
         <View style={styles.previewBox}>
           <Text style={styles.previewMeta}>
