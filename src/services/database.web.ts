@@ -154,6 +154,14 @@ export async function addAuditEntry(entry: AuditEntry): Promise<void> {
   persist();
 }
 
+export async function deleteAuditEntry(itemId: string, entryId: string): Promise<void> {
+  await initDatabase();
+  memoryStore.audits = memoryStore.audits.filter(
+    (a) => !(a.itemId === itemId && a.id === entryId)
+  );
+  persist();
+}
+
 export async function getAuditEntries(itemId: string): Promise<AuditEntry[]> {
   await initDatabase();
   return memoryStore.audits

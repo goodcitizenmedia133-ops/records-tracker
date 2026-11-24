@@ -27,6 +27,7 @@ import {
 } from '../data/statutes';
 import {
     addAuditEntry,
+  deleteAuditEntry,
     getAllAgencies,
     getAllItems,
     getAuditEntries,
@@ -89,6 +90,8 @@ export function RequestDetailScreen({
   const [audits, setAudits] = useState<AuditEntry[]>([]);
   const [auditSortOrder, setAuditSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [showArchivedAudits, setShowArchivedAudits] = useState(false);
+  const [auditFilter, setAuditFilter] = useState<'all' | 'sent' | 'pdf' | 'notes'>('all');
+  const [confirmDeleteAuditId, setConfirmDeleteAuditId] = useState<string | null>(null);
   const [archivedAuditIds, setArchivedAuditIds] = useState<string[]>(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -1284,10 +1287,40 @@ export function RequestDetailScreen({
           </Pressable>
         </View>
 
+        <View style={styles.statusGrid}>
+          {(
+            [
+              ['all', 'All'],
+              ['sent', 'Sent'],
+              ['pdf', 'PDFs'],
+              ['notes', 'Notes'],
+            ] as const
+          ).map(([key, label]) => {
+            const active = auditFilter === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => {
+                  setAuditFilter(key);
+                  setConfirmDeleteAuditId(null);
+                }}
+                style={[styles.chipBtn, active && styles.chipBtnActive]}
+              >
+                <Text style={[styles.chipBtnText, active && styles.chipBtnTextActive]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         {(() => {
-          const filtered = audits.filter((entry) =>
-            showArchivedAudits ? true : !archivedAuditIds.includes(entry.id)
-          );
+          const filtered = audits.filter((entry) => {
+            if (!showArchivedAudits && archivedAuditIds.includes(entry.id)) return false;
+            const act = (entry.action || '').toUpperCase();
+            if (auditFilter === 'sent') return act.includes('SENT') || act.includes('HANDOFF');
+            if (auditFilter === 'pdf') return act.includes('PDF');
+            if (auditFilter === 'notes') return !act.includes('SENT') && !act.includes('HANDOFF') && !act.includes('PDF');
+            return true;
+          });
           const sorted = [...filtered].sort((a, b) => {
             const diff =
               new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
@@ -1299,13 +1332,14 @@ export function RequestDetailScreen({
               <Text style={styles.mutedText}>
                 {audits.length === 0
                   ? 'No audit entries recorded yet.'
-                  : 'No active audit entries shown. Toggle Show Archived to view archived items.'}
+                  : 'No audit entries match the current filter.'}
               </Text>
             );
           }
 
           return sorted.map((entry) => {
             const isArchived = archivedAuditIds.includes(entry.id);
+            const isConfirmingDelete = confirmDeleteAuditId === entry.id;
             return (
               <View
                 key={entry.id}
@@ -1316,29 +1350,63 @@ export function RequestDetailScreen({
                     {entry.action} · {entry.createdAt.slice(0, 16).replace('T', ' ')}
                     {isArchived ? ' · ARCHIVED' : ''}
                   </Text>
-                  <Pressable
-                    onPress={() => {
-                      const nextIds = isArchived
-                        ? archivedAuditIds.filter((id) => id !== entry.id)
-                        : [...archivedAuditIds, entry.id];
-                      setArchivedAuditIds(nextIds);
-                      try {
-                        if (typeof window !== 'undefined' && window.localStorage) {
-                          window.localStorage.setItem(
-                            `gcm_archived_audits_${itemId}`,
-                            JSON.stringify(nextIds)
-                          );
+                  <View style={styles.inlineRow}>
+                    <Pressable
+                      onPress={() => {
+                        const nextIds = isArchived
+                          ? archivedAuditIds.filter((id) => id !== entry.id)
+                          : [...archivedAuditIds, entry.id];
+                        setArchivedAuditIds(nextIds);
+                        try {
+                          if (typeof window !== 'undefined' && window.localStorage) {
+                            window.localStorage.setItem(
+                              `gcm_archived_audits_${itemId}`,
+                              JSON.stringify(nextIds)
+                            );
+                          }
+                        } catch {
+                          // ignore storage errors
                         }
-                      } catch {
-                        // ignore storage errors
-                      }
-                    }}
-                    style={styles.archivePillBtn}
-                  >
-                    <Text style={styles.archivePillText}>
-                      {isArchived ? 'Unarchive' : 'Archive'}
-                    </Text>
-                  </Pressable>
+                      }}
+                      style={styles.archivePillBtn}
+                    >
+                      <Text style={styles.archivePillText}>
+                        {isArchived ? 'Unarchive' : 'Archive'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={async () => {
+                        if (!isConfirmingDelete) {
+                          setConfirmDeleteAuditId(entry.id);
+                          setFeedbackBanner(`Tap "Confirm Delete" again to permanently remove ${entry.action}.`);
+                          return;
+                        }
+                        setConfirmDeleteAuditId(null);
+                        await deleteAuditEntry(itemId, entry.id);
+                        const nextArchived = archivedAuditIds.filter((id) => id !== entry.id);
+                        setArchivedAuditIds(nextArchived);
+                        try {
+                          if (typeof window !== 'undefined' && window.localStorage) {
+                            window.localStorage.setItem(
+                              `gcm_archived_audits_${itemId}`,
+                              JSON.stringify(nextArchived)
+                            );
+                          }
+                        } catch {
+                          // ignore storage errors
+                        }
+                        const log = await getAuditEntries(itemId);
+                        setAudits(log);
+                        onUpdated();
+                        setFeedbackBanner(`Deleted audit entry (${entry.action}).`);
+                      }}
+                      style={styles.archivePillBtn}
+                    >
+                      <Text style={styles.archivePillText}>
+                        {isConfirmingDelete ? 'Confirm Delete' : 'Delete'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
                 <Text style={styles.auditDetail}>{entry.detail}</Text>
               </View>

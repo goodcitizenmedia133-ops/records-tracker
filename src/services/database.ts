@@ -259,6 +259,17 @@ export async function addAuditEntry(entry: AuditEntry): Promise<void> {
   );
 }
 
+export async function deleteAuditEntry(itemId: string, entryId: string): Promise<void> {
+  await initDatabase();
+  const db = await getDb();
+  memoryStore.audits = memoryStore.audits.filter(
+    (a) => !(a.itemId === itemId && a.id === entryId)
+  );
+  if (db) {
+    await db.runAsync('DELETE FROM audit_entries WHERE id = ? AND itemId = ?', [entryId, itemId]);
+  }
+}
+
 export async function getAuditEntries(itemId: string): Promise<AuditEntry[]> {
   await initDatabase();
   const db = await getDb();
