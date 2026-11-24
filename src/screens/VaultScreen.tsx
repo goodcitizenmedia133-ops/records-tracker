@@ -360,7 +360,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Save or Restore All Data (JSON)</Text>
+        <Text style={styles.sectionTitle}>Save or Restore Backup File</Text>
         <View style={styles.rowBtns}>
           <Pressable
             onPress={() => void handleExportBackup()}
@@ -372,7 +372,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
             onPress={() => void handleImportBackup()}
             style={[styles.secondaryBtn, { flex: 1 }]}
           >
-            <Text style={styles.secondaryBtnText}>Restore JSON</Text>
+            <Text style={styles.secondaryBtnText}>Restore Backup</Text>
           </Pressable>
         </View>
         <TextInput

@@ -895,7 +895,7 @@ export function RequestDetailScreen({
             <Text style={styles.actionBtnText}>Open Default Mail</Text>
           </Pressable>
           <Pressable onPress={handleDownloadEml} style={styles.actionBtn}>
-            <Text style={styles.actionBtnText}>Download Email File (.eml)</Text>
+            <Text style={styles.actionBtnText}>Download Draft Email File</Text>
           </Pressable>
           {hasValidPortal ? (
             <Pressable onPress={handlePortal} style={styles.actionBtn}>

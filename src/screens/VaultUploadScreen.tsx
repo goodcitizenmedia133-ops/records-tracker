@@ -281,7 +281,7 @@ export function VaultUploadScreen({ onBack }: VaultUploadScreenProps) {
           {outcome.publicUrl ? <Text style={styles.helper}>Index Asset URL: {outcome.publicUrl}</Text> : null}
           <Text style={styles.codeBox}>{outcome.catalogJsonSnippet}</Text>
           <Pressable onPress={() => void copyIndexJson(outcome.catalogJsonSnippet)} style={styles.copyBtn}>
-            <Text style={styles.copyBtnText}>{copiedJson ? 'Copied Index JSON' : 'Copy Index JSON'}</Text>
+            <Text style={styles.copyBtnText}>{copiedJson ? 'Copied Catalog Entry' : 'Copy Catalog Entry'}</Text>
           </Pressable>
         </View>
       ) : null}

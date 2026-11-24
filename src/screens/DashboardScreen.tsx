@@ -96,7 +96,7 @@ export function DashboardScreen({
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.headerTitle}>Records Tracker</Text>
-          <Text style={styles.headerSub}>Local-first statutory deadline log</Text>
+          <Text style={styles.headerSub}>Saved locally · Response due date tracker</Text>
         </View>
         <Pressable
           onPress={onCreateNew}
