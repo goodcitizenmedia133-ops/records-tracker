@@ -63,28 +63,90 @@ export function formatCatalogCommitPayload(entry: VaultCatalogEntry, jurisdictio
   return { path: buildCatalogIndexPath(jurisdiction || entry.jurisdiction), entry };
 }
 
-export async function loadVaultCatalog(jurisdiction?: JurisdictionCode): Promise<VaultCatalogEntry[]> {
+export type VaultCatalogSource = 'remote' | 'local';
+
+export interface VaultCatalogLoadResult {
+  entries: VaultCatalogEntry[];
+  source: VaultCatalogSource;
+  error?: string;
+}
+
+const CATALOG_NL = String.fromCharCode(10);
+
+function catalogTrimEndSlashes(s: string): string {
+  let e = s.length;
+  while (e > 0 && s.charAt(e - 1) === '/') e -= 1;
+  return s.slice(0, e);
+}
+
+export function normalizeJurisdictionCode(input: string): JurisdictionCode {
+  const c = input.trim().toUpperCase();
+  if (c === 'FED' || c === 'FEDERAL' || c === 'US-FED') return 'US-FED';
+  if (c === 'COLORADO') return 'US-CO';
+  if (c.length === 2) return 'US-' + c;
+  return c;
+}
+
+export function buildCatalogRemoteUrl(jurisdiction?: JurisdictionCode): string {
+  const path = buildCatalogIndexPath(jurisdiction);
+  const override = catalogTrimEndSlashes((process.env.EXPO_PUBLIC_VAULT_CATALOG_BASE_URL || '').trim());
+  if (override) return override + '/' + path;
   const repo = (process.env.EXPO_PUBLIC_VAULT_GITHUB_REPO || DEFAULT_VAULT_CONFIG.githubIndexRepo).trim();
   const branch = (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || DEFAULT_VAULT_CONFIG.githubIndexBranch || 'master').trim();
-  const localStaged = readLocalStagedCatalogEntries();
-  const filterByJurisdiction = (items: VaultCatalogEntry[]) =>
-    jurisdiction ? items.filter((item) => item.jurisdiction === jurisdiction) : items;
+  if (!repo) return '';
+  return 'https://raw.githubusercontent.com/' + repo + '/' + branch + '/' + path;
+}
 
-  if (!repo) {
-    return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...BUNDLED_CATALOG]));
-  }
+function catalogMergeAndFilter(lists: VaultCatalogEntry[][], jurisdiction?: JurisdictionCode): VaultCatalogEntry[] {
+  const all: VaultCatalogEntry[] = [];
+  lists.forEach((l) => { l.forEach((i) => all.push(i)); });
+  return dedupeCatalogEntries(jurisdiction ? all.filter((i) => i && i.jurisdiction === jurisdiction) : all);
+}
+
+export async function loadVaultCatalogWithSource(jurisdiction?: JurisdictionCode, timeoutMs: number = 8000): Promise<VaultCatalogLoadResult> {
+  const staged = readLocalStagedCatalogEntries();
+  const local = (): VaultCatalogEntry[] => catalogMergeAndFilter([staged, BUNDLED_CATALOG], jurisdiction);
+  const url = buildCatalogRemoteUrl(jurisdiction);
+  if (!url) return { entries: local(), source: 'local', error: 'No remote catalog configured' };
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
-    const url = `https://raw.githubusercontent.com/${repo}/${branch}/${buildCatalogIndexPath(jurisdiction)}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...BUNDLED_CATALOG]));
-    }
+    const res = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+    if (!res.ok) return { entries: local(), source: 'local', error: 'Catalog HTTP ' + res.status };
     const data = await res.json();
-    const list = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : BUNDLED_CATALOG;
-    return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...list, ...BUNDLED_CATALOG]));
-  } catch {
-    return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...BUNDLED_CATALOG]));
+    const list = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : null;
+    if (!list) return { entries: local(), source: 'local', error: 'Catalog JSON has no entries array' };
+    const remote: VaultCatalogEntry[] = list.filter((x: unknown) => !!x && typeof x === 'object');
+    return { entries: catalogMergeAndFilter([staged, remote, BUNDLED_CATALOG], jurisdiction), source: 'remote' };
+  } catch (err) {
+    return { entries: local(), source: 'local', error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+}
+
+export async function loadVaultCatalog(jurisdiction?: JurisdictionCode): Promise<VaultCatalogEntry[]> {
+  const result = await loadVaultCatalogWithSource(jurisdiction);
+  return result.entries;
+}
+
+export function formatCatalogEntryJson(entry: VaultCatalogEntry): string {
+  return JSON.stringify(entry, null, 2) + CATALOG_NL;
+}
+
+export function formatCatalogIndexJson(entries: VaultCatalogEntry[], jurisdiction?: JurisdictionCode, generatedAt?: string): string {
+  const scoped = dedupeCatalogEntries(jurisdiction ? entries.filter((e) => e && e.jurisdiction === jurisdiction) : entries);
+  const sorted = scoped.slice().sort((x, y) => String(x.jurisdiction || '').localeCompare(String(y.jurisdiction || '')) || String(x.kind || '').localeCompare(String(y.kind || '')) || String(x.id || '').localeCompare(String(y.id || '')));
+  return JSON.stringify({ version: 1, generatedAt: generatedAt || new Date().toISOString(), jurisdiction: jurisdiction || null, entries: sorted }, null, 2) + CATALOG_NL;
+}
+
+export function buildGithubIndexFiles(entries: VaultCatalogEntry[], generatedAt?: string): Array<{ path: string; content: string }> {
+  const stamp = generatedAt || new Date().toISOString();
+  const files: Array<{ path: string; content: string }> = [{ path: buildCatalogIndexPath(), content: formatCatalogIndexJson(entries, undefined, stamp) }];
+  const seen: string[] = [];
+  entries.forEach((e) => { if (e && e.jurisdiction && seen.indexOf(e.jurisdiction) < 0) seen.push(e.jurisdiction); });
+  seen.sort().forEach((j) => { files.push({ path: buildCatalogIndexPath(j), content: formatCatalogIndexJson(entries, j, stamp) }); });
+  return files;
 }
 
 export function resolveIndexFileForState(stateCode: string): string {

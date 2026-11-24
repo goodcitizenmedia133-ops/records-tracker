@@ -226,22 +226,6 @@ export function buildFormattedRequestText(
         ? options?.foiaPack || FOIA_552_PACK
         : null;
 
-  const matchedSectionLines =
-    pack && insights.referencedCitations.length > 0
-      ? pack.sections
-          .filter((sec) => insights.referencedCitations.includes(sec.citation))
-          .slice(0, 4)
-          .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
-      : isCcjra && pack
-        ? pack.sections
-            .filter((sec) => ['C.R.S. § 24-72-303', 'C.R.S. § 24-72-304', 'C.R.S. § 24-72-305', 'C.R.S. § 24-72-306'].includes(sec.citation))
-            .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
-        : isFoia && pack
-          ? pack.sections
-              .slice(0, 4)
-              .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
-          : [];
-
   const ccjraAffirmationBlock =
     isCcjra && options?.includeCcjraAffirmation !== false
       ? 'CCJRA Non-Pecuniary Solicitation Statement (C.R.S. § 24-72-305.5): Pursuant to C.R.S. § 24-72-305.5, these requested criminal justice records will not be used for the direct solicitation of business for pecuniary gain.'
@@ -276,25 +260,17 @@ export function buildFormattedRequestText(
       ? 'Thanks for your help and time.'
       : 'Thank you for your time and assistance.';
 
-  const statuteRefBlock =
-    matchedSectionLines.length > 0
-      ? ['Applicable Statute Reference Notes:', ...matchedSectionLines].join('\n')
-      : null;
-
   const paragraphs: Array<string | null> = [
     greeting,
     openingLine,
     scopeText,
     statute.windowNote,
     feeLine,
-    statuteRefBlock,
     ccjraAffirmationBlock,
     item.dueDate ? `Target statutory response date: ${item.dueDate}.` : null,
     notesText ? `Additional context: ${notesText}` : null,
     formatPreference,
     closingLine,
-    '---',
-    `Reference: ${item.id} | Statute: ${item.statuteCode} | Tone: ${toneStyle} | Agency: ${agencyName}`,
   ];
 
   return paragraphs.filter((part): part is string => Boolean(part)).join('\n\n');
@@ -434,15 +410,25 @@ export function buildItemEmailHandoff(
 
 async function openExternalUrl(url: string): Promise<boolean> {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    return Boolean(opened);
+    try {
+      if (url.indexOf('mailto:') === 0) {
+        window.location.href = url;
+        return true;
+      }
+      const opened = window.open(url, '_blank');
+      if (opened) {
+        try { opened.opener = null; } catch { }
+      }
+      return Boolean(opened);
+    } catch {
+      return false;
+    }
   }
   const supported = await Linking.canOpenURL(url).catch(() => true);
   if (!supported) return false;
   await Linking.openURL(url);
   return true;
 }
-
 export function buildEmlDraftContent(bundle: AnyEmailHandoffBundle): string {
   const safeSubject = bundle.subject.replace(/[\r\n]+/g, ' ').trim();
   const safeTo = bundle.to.replace(/[\r\n]+/g, ' ').trim();
@@ -679,52 +665,54 @@ export function getProviderWebmailInfo(senderEmail?: string | null): {
   };
 }
 
+export type ProviderComposeId = 'gmail' | 'outlook' | 'office365' | 'yahoo' | 'mailto';
+
+export function detectProviderComposeId(senderEmail?: string | null): ProviderComposeId {
+  const email = (senderEmail || '').trim().toLowerCase();
+  const at = email.lastIndexOf('@');
+  const domain = at >= 0 ? email.slice(at + 1) : '';
+  if (domain === 'gmail.com' || domain === 'googlemail.com') return 'gmail';
+  if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com') return 'outlook';
+  if (domain === 'yahoo.com' || domain === 'ymail.com') return 'yahoo';
+  return 'mailto';
+}
+
+export function buildProviderComposeUrl(id: ProviderComposeId, payload: HandoffPayload): string {
+  const to = encodeURIComponent(normalizeRecipientEmail(payload.to));
+  const su = encodeURIComponent(payload.subject.trim());
+  const bd = encodeURIComponent(payload.body);
+  const qs = 'to=' + to + '&subject=' + su + '&body=' + bd;
+  if (id === 'gmail') return buildGmailComposeUrl(payload);
+  if (id === 'outlook') return 'https://outlook.live.com/mail/0/deeplink/compose?' + qs;
+  if (id === 'office365') return 'https://outlook.office.com/mail/deeplink/compose?' + qs;
+  if (id === 'yahoo') return 'https://compose.mail.yahoo.com/?' + qs;
+  return buildMailtoUrl(payload);
+}
+
 export async function launchProviderWebmailHandoff(
   item: PublicRecordItem,
   agency: AgencyRecord | null,
-  options?: RequestLetterOptions & { senderEmail?: string | null }
+  options?: RequestLetterOptions & { senderEmail?: string | null; providerId?: ProviderComposeId }
 ): Promise<HandoffResult> {
   const sender = (options?.senderEmail || item.senderEmail || '').trim();
-  const provider = getProviderWebmailInfo(sender);
-  const isGmail = /@(gmail|googlemail)\.com$/i.test(sender) || provider.id === 'gmail';
-
-  if (isGmail) {
-    return launchGmailWebHandoffWithStatute(item, agency, options);
-  }
-
+  const id: ProviderComposeId = options?.providerId || detectProviderComposeId(sender);
   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
-  if (provider.composeUrl) {
-    try {
-      const ok = await openExternalUrl(provider.composeUrl);
-      if (ok) {
-        return {
-          ok: true,
-          message: `Opened ${provider.providerName}. Confirm you are sending from ${sender || 'your selected account'} before hitting Send.`,
-        };
-      }
-    } catch {
-      // fall through to mailto / clipboard guidance
-    }
+  const url = buildProviderComposeUrl(id, { to: bundle.to, subject: bundle.subject, body: bundle.body });
+  const limit = id === 'mailto' ? 1900 : 8000;
+  if (url.length > limit) {
+    return { ok: false, message: 'This letter is too long to prefill through a link. Use Download Draft (.eml) or Copy Email Packet.' };
   }
-
+  const who = sender || 'your chosen account';
   try {
-    const mailtoOk = await openExternalUrl(bundle.mailtoUrl);
-    if (mailtoOk) {
-      return {
-        ok: true,
-        message: `Opened mail client for ${sender || provider.providerName}. Verify the From address is ${sender || 'your chosen account'} before sending.`,
-      };
+    const ok = await openExternalUrl(url);
+    if (ok) {
+      return { ok: true, message: 'Opened your draft with recipient, subject and body filled in. Confirm the From address is ' + who + ' before sending.' };
     }
   } catch {
     // fall through
   }
-
-  return {
-    ok: false,
-    message: `Could not open ${provider.providerName} automatically for ${sender || 'your selected sender'}. Use Copy Email Packet or Download Draft (.eml) and paste into your ${provider.providerName} account.`,
-  };
+  return { ok: false, message: 'Could not open your mail provider automatically. Use Download Draft (.eml) or Copy Email Packet.' };
 }
-
 export interface SmtpSenderConfig {
   host?: string;
   port?: number;

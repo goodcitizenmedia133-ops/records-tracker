@@ -1,0 +1,1018 @@
+﻿=== src\services\handoff.ts ===
+1: import { Linking, Platform } from 'react-native';
+2: import { CCJRA_300_PACK } from '../data/statutes/co/ccjra300';
+3: import { FOIA_552_PACK } from '../data/statutes/fed/foia552';
+4: import { CORA_200_PACK, StateStatutePack } from '../data/statutes/co/cora200';
+5: import { loadStateStatutePack, loadStatutePackById } from '../data/statutes/statuteRegistry';
+6: import { AgencyRecord, PublicRecordItem } from '../types/models';
+7: import { detectRequestPatterns, RequestPatternMatch } from './wizardEngine';
+8: 
+9: export interface HandoffResult {
+10:   ok: boolean;
+11:   message: string;
+12: }
+13: 
+14: export interface HandoffPayload {
+15:   to?: string;
+16:   subject: string;
+17:   body: string;
+18: }
+19: 
+20: export interface AnyEmailHandoffBundle {
+21:   to: string;
+22:   subject: string;
+23:   body: string;
+24:   mailtoUrl: string;
+25:   gmailUrl: string;
+26:   clipboardText: string;
+27: }
+28: 
+29: export type EmailToneStyle =
+30:   | 'firm_statutory'
+31:   | 'clear_professional'
+32:   | 'collaborative_concise'
+33:   | 'sweet_courteous'
+34:   | 'deadline_follow_up';
+35: 
+36: export interface RequestLetterOptions {
+37:   requesterSignOff?: string;
+38:   preferredFormat?: string;
+39:   toneStyle?: EmailToneStyle;
+40:   coraPack?: StateStatutePack | null;
+41:   ccjraPack?: StateStatutePack | null;
+42:   foiaPack?: StateStatutePack | null;
+43:   includeCcjraAffirmation?: boolean;
+44: }
+45: 
+46: export interface EmailDraftInsights {
+47:   toneStyle: EmailToneStyle;
+48:   isDeadlineMissed: boolean;
+49:   detectedPatterns: RequestPatternMatch[];
+50:   referencedCitations: string[];
+51: }
+52: 
+53: export interface EmailToneOption {
+54:   id: EmailToneStyle;
+55:   label: string;
+56:   outcomeSummary: string;
+57: }
+58: 
+59: export function isRequestDeadlineMissed(
+60:   item?: Pick<PublicRecordItem, 'dueDate' | 'status'> | null,
+61:   todayIso?: string
+62: ): boolean {
+63:   if (!item || !item.dueDate) return false;
+64:   const status = (item.status || '').toLowerCase();
+65:   if (status === 'fulfilled' || status === 'closed' || status === 'completed') return false;
+66:   const dueMatch = /^(\d{4}-\d{2}-\d{2})/.exec(item.dueDate.trim());
+67:   if (!dueMatch) return false;
+68:   const refDate = todayIso && /^\d{4}-\d{2}-\d{2}/.test(todayIso.trim())
+69:     ? todayIso.trim().slice(0, 10)
+70:     : new Date().toISOString().slice(0, 10);
+71:   return dueMatch[1] < refDate;
+72: }
+73: 
+74: export function getAvailableEmailTones(
+75:   item?: Pick<PublicRecordItem, 'dueDate' | 'status'> | null,
+76:   todayIso?: string
+77: ): EmailToneOption[] {
+78:   const missed = isRequestDeadlineMissed(item, todayIso);
+79:   const fourthOption: EmailToneOption = missed
+80:     ? {
+81:         id: 'deadline_follow_up',
+82:         label: 'Deadline Follow-Up',
+83:         outcomeSummary: 'Flags missed statutory deadline and requests immediate status or written grounds.',
+84:       }
+85:     : {
+86:         id: 'sweet_courteous',
+87:         label: 'Sweet & Courteous',
+88:         outcomeSummary: 'Extra-gracious, warm outreach to staff while keeping full statutory citations.',
+89:       };
+90:   return [
+91:     {
+92:       id: 'firm_statutory',
+93:       label: 'Firm & Statutory',
+94:       outcomeSummary: 'Formal statutory enforcement, clock rules, and advance fee notice.',
+95:     },
+96:     {
+97:       id: 'clear_professional',
+98:       label: 'Clear & Professional',
+99:       outcomeSummary: 'Structured, direct request with clear scope, format, and target date.',
+100:     },
+101:     {
+102:       id: 'collaborative_concise',
+103:       label: 'Collaborative & Concise',
+104:       outcomeSummary: 'Short, low-friction request designed for fast custodian fulfillment.',
+105:     },
+106:     fourthOption,
+107:   ];
+108: }
+109: 
+110: export function normalizeRecipientEmail(to?: string): string {
+111:   return (to || '').trim();
+112: }
+113: 
+114: function getStatuteHeader(
+115:   statuteCode: string,
+116:   toneStyle: EmailToneStyle = 'clear_professional'
+117: ): {
+118:   label: string;
+119:   windowNote: string;
+120: } {
+121:   const code = statuteCode.trim().toUpperCase();
+122:   if (code === 'CORA') {
+123:     const windowNote =
+124:       toneStyle === 'firm_statutory'
+125:         ? 'Under CORA (C.R.S. § 24-72-201 and § 24-72-203), public records are open for inspection and copying. Please make responsive records available promptly or within the statutory three-working-day window, and provide written notice with specific statutory grounds under C.R.S. § 24-72-204 if any portion is withheld or delayed.'
+126:         : toneStyle === 'collaborative_concise'
+127:           ? 'Under CORA, please share available records promptly within the standard three-working-day timeframe (or let me know if additional time or clarification is needed).'
+128:           : 'Under CORA, please provide the records promptly or within the statutory three-working-day period (or notify me if an extension applies under C.R.S. § 24-72-203(3)(b)).';
+129:     return {
+130:       label: 'Colorado Open Records Act (CORA, C.R.S. § 24-72-200.1 et seq.)',
+131:       windowNote,
+132:     };
+133:   }
+134:   switch (code) {
+135:     case 'CCJRA':
+136:       return {
+137:         label: 'Colorado Criminal Justice Records Act (CCJRA, C.R.S. § 24-72-301 et seq.)',
+138:         windowNote:
+139:           toneStyle === 'firm_statutory'
+140:             ? 'Under CCJRA, records of official action are open for inspection under C.R.S. § 24-72-303, and any denial or withholding of criminal justice records must be supported by a written statement of statutory or public-interest grounds within 72 hours of request under C.R.S. § 24-72-305(6).'
+141:             : 'Please make records of official action and non-exempt criminal justice records available for inspection or copying in accordance with CCJRA (C.R.S. § 24-72-301 et seq.), with any written denial grounds provided within 72 hours under C.R.S. § 24-72-305(6).',
+142:       };
+143:     case 'FOIA':
+144:       return {
+145:         label: 'Freedom of Information Act (FOIA, 5 U.S.C. § 552)',
+146:         windowNote:
+147:           toneStyle === 'sweet_courteous'
+148:             ? 'Under FOIA (5 U.S.C. § 552), I deeply appreciate your time and help and look forward to your determination within the statutory 20-business-day timeframe.'
+149:             : toneStyle === 'deadline_follow_up'
+150:               ? 'Follow-Up Under FOIA (5 U.S.C. § 552): The statutory determination timeframe has elapsed; please advise on current processing status and expected release date.'
+151:               : 'Under FOIA, I look forward to your determination within the statutory 20-business-day timeframe.',
+152:       };
+153:     default:
+154:       return {
+155:         label: `public records law (${statuteCode})`,
+156:         windowNote: 'Please process this request within the applicable statutory timeframe.',
+157:       };
+158:   }
+159: }
+160: 
+161: export function getEmailDraftInsights(
+162:   item: PublicRecordItem,
+163:   options?: RequestLetterOptions
+164: ): EmailDraftInsights {
+165:   const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
+166:   const combinedText = [item.title, item.summary, item.notes, item.agencyName]
+167:     .filter(Boolean)
+168:     .join('\n');
+169:   const detectedPatterns = detectRequestPatterns(combinedText, item.statuteCode);
+170:   const citationSet = new Set<string>();
+171:   for (const p of detectedPatterns) {
+172:     for (const c of p.coraCitations) {
+173:       citationSet.add(c);
+174:     }
+175:   }
+176:   if (item.statuteCode.trim().toUpperCase() === 'CORA' && citationSet.size === 0) {
+177:     citationSet.add('C.R.S. § 24-72-200.1');
+178:     citationSet.add('C.R.S. § 24-72-201');
+179:   }
+180:   return {
+181:     toneStyle,
+182:     isDeadlineMissed: isRequestDeadlineMissed(item),
+183:     detectedPatterns,
+184:     referencedCitations: Array.from(citationSet),
+185:   };
+186: }
+187: 
+188: function cleanSubjectTitle(rawTitle: string, statuteCode: string): string {
+189:   const statuteWord = statuteCode.trim();
+190:   const cleaned = rawTitle
+191:     .trim()
+192:     .replace(new RegExp(`\\b${statuteWord}\\s+records\\s+request\\b`, 'gi'), '')
+193:     .replace(/\bpublic records request\b/gi, '')
+194:     .replace(/\brecords request\b/gi, '')
+195:     .replace(/\s{2,}/g, ' ')
+196:     .replace(/^[-:|]+|[-:|]+$/g, '')
+197:     .trim();
+198:   return cleaned || rawTitle.trim();
+199: }
+200: 
+201: export function buildFormattedRequestText(
+202:   item: PublicRecordItem,
+203:   agency?: AgencyRecord | null,
+204:   options?: RequestLetterOptions
+205: ): string {
+206:   const agencyName = (agency?.name || item.agencyName || '').trim() || 'Records Custodian';
+207:   const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
+208:   const statute = getStatuteHeader(item.statuteCode, toneStyle);
+209:   const scopeText = (item.summary || '').trim() || item.title.trim();
+210:   const notesText = (item.notes || '').trim();
+211:   const formatPreference =
+212:     (options?.preferredFormat || '').trim() ||
+213:     'Electronic delivery in searchable PDF or native digital format via reply email is preferred if available.';
+214:   const signOffText = (options?.requesterSignOff || '').trim();
+215: 
+216:   const insights = getEmailDraftInsights(item, options);
+217:   const upperStatute = item.statuteCode.trim().toUpperCase();
+218:   const isCora = upperStatute === 'CORA';
+219:   const isCcjra = upperStatute === 'CCJRA';
+220:   const isFoia = upperStatute === 'FOIA';
+221:   const pack: StateStatutePack | null = isCora
+222:     ? options?.coraPack || CORA_200_PACK
+223:     : isCcjra
+224:       ? options?.ccjraPack || CCJRA_300_PACK
+225:       : isFoia
+226:         ? options?.foiaPack || FOIA_552_PACK
+227:         : null;
+228: 
+229:   const matchedSectionLines =
+230:     pack && insights.referencedCitations.length > 0
+231:       ? pack.sections
+232:           .filter((sec) => insights.referencedCitations.includes(sec.citation))
+233:           .slice(0, 4)
+234:           .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
+235:       : isCcjra && pack
+236:         ? pack.sections
+237:             .filter((sec) => ['C.R.S. § 24-72-303', 'C.R.S. § 24-72-304', 'C.R.S. § 24-72-305', 'C.R.S. § 24-72-306'].includes(sec.citation))
+238:             .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
+239:         : isFoia && pack
+240:           ? pack.sections
+241:               .slice(0, 4)
+242:               .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
+243:           : [];
+244: 
+245:   const ccjraAffirmationBlock =
+246:     isCcjra && options?.includeCcjraAffirmation !== false
+247:       ? 'CCJRA Non-Pecuniary Solicitation Statement (C.R.S. § 24-72-305.5): Pursuant to C.R.S. § 24-72-305.5, these requested criminal justice records will not be used for the direct solicitation of business for pecuniary gain.'
+248:       : null;
+249: 
+250:   const greeting =
+251:     toneStyle === 'firm_statutory'
+252:       ? `Dear ${agencyName} Public Records Custodian,`
+253:       : toneStyle === 'collaborative_concise'
+254:         ? `Hi ${agencyName} Team,`
+255:         : `Hello ${agencyName} Records Custodian,`;
+256: 
+257:   const openingLine =
+258:     toneStyle === 'firm_statutory'
+259:       ? `Pursuant to the ${statute.label}, please accept this formal request to inspect and obtain copies of public records concerning "${item.title.trim()}":`
+260:       : toneStyle === 'collaborative_concise'
+261:         ? `I am reaching out under the ${statute.label} to request copies or inspection of records related to "${item.title.trim()}":`
+262:         : `Pursuant to the ${statute.label}, I am requesting copies of (or the opportunity to inspect) the following public records regarding "${item.title.trim()}":`;
+263: 
+264:   const feeLine =
+265:     item.feeQuoted !== null && item.feeQuoted !== undefined
+266:       ? `Fee noted to date: ${item.feeQuoted}. Please confirm any applicable statutory copying, search, or retrieval charges in advance before incurring costs.`
+267:       : toneStyle === 'firm_statutory'
+268:         ? 'Please provide written notice in advance before incurring any claimed statutory fees so we can review whether statutory thresholds or exemptions apply.'
+269:         : 'Please let me know in advance if any statutory fees will apply before processing.';
+270: 
+271:   const closingLine = signOffText
+272:     ? toneStyle === 'collaborative_concise'
+273:       ? `Best regards,\n${signOffText}`
+274:       : `Sincerely,\n${signOffText}`
+275:     : toneStyle === 'collaborative_concise'
+276:       ? 'Thanks for your help and time.'
+277:       : 'Thank you for your time and assistance.';
+278: 
+279:   const statuteRefBlock =
+280:     matchedSectionLines.length > 0
+281:       ? ['Applicable Statute Reference Notes:', ...matchedSectionLines].join('\n')
+282:       : null;
+283: 
+284:   const paragraphs: Array<string | null> = [
+285:     greeting,
+286:     openingLine,
+287:     scopeText,
+288:     statute.windowNote,
+289:     feeLine,
+290:     statuteRefBlock,
+291:     ccjraAffirmationBlock,
+292:     item.dueDate ? `Target statutory response date: ${item.dueDate}.` : null,
+293:     notesText ? `Additional context: ${notesText}` : null,
+294:     formatPreference,
+295:     closingLine,
+296:     '---',
+297:     `Reference: ${item.id} | Statute: ${item.statuteCode} | Tone: ${toneStyle} | Agency: ${agencyName}`,
+298:   ];
+299: 
+300:   return paragraphs.filter((part): part is string => Boolean(part)).join('\n\n');
+301: }
+302: 
+303: export async function buildItemEmailHandoffWithStatute(
+304:   item: PublicRecordItem,
+305:   agency: AgencyRecord | null,
+306:   options?: RequestLetterOptions
+307: ): Promise<AnyEmailHandoffBundle> {
+308:   const upper = item.statuteCode.trim().toUpperCase();
+309:   let coraPack: StateStatutePack | null = options?.coraPack || null;
+310:   let ccjraPack: StateStatutePack | null = options?.ccjraPack || null;
+311:   let foiaPack: StateStatutePack | null = options?.foiaPack || null;
+312: 
+313:   if (!coraPack && (upper === 'CO' || upper === 'CORA')) {
+314:     try {
+315:       coraPack = await loadStateStatutePack('CO');
+316:     } catch {
+317:       coraPack = CORA_200_PACK;
+318:     }
+319:   }
+320: 
+321:   if (!ccjraPack && upper === 'CCJRA') {
+322:     try {
+323:       ccjraPack = await loadStatutePackById('CO_CCJRA');
+324:     } catch {
+325:       ccjraPack = CCJRA_300_PACK;
+326:     }
+327:   }
+328: 
+329:   if (!foiaPack && upper === 'FOIA') {
+330:     try {
+331:       foiaPack = await loadStatutePackById('US_FED_FOIA');
+332:     } catch {
+333:       foiaPack = FOIA_552_PACK;
+334:     }
+335:   }
+336: 
+337:   return buildItemEmailHandoff(item, agency, { ...options, coraPack, ccjraPack, foiaPack });
+338: }
+339: 
+340: export async function launchGmailWebHandoffWithStatute(
+341:   item: PublicRecordItem,
+342:   agency: AgencyRecord | null,
+343:   options?: RequestLetterOptions & { senderEmail?: string | null }
+344: ): Promise<HandoffResult> {
+345:   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+346:   try {
+347:     const ok = await openExternalUrl(bundle.gmailUrl);
+348:     if (!ok) {
+349:       return {
+350:         ok: false,
+351:         message: 'Browser blocked the Gmail popup tab—allow popups for this site or use Download Draft (.eml) / Copy Email Packet.',
+352:       };
+353:     }
+354:     return {
+355:       ok: true,
+356:       message: 'Opened Gmail Web with a statute-aligned request draft ready for review and send.',
+357:     };
+358:   } catch {
+359:     return {
+360:       ok: false,
+361:       message: 'Gmail Web handoff failed. Use Copy Full Packet to paste into any email client.',
+362:     };
+363:   }
+364: }
+365: 
+366: export function buildMailtoUrl(payload: HandoffPayload): string {
+367:   const recipient = encodeURIComponent(normalizeRecipientEmail(payload.to));
+368:   const queryParts: string[] = [];
+369:   if (payload.subject.trim()) {
+370:     queryParts.push(`subject=${encodeURIComponent(payload.subject.trim())}`);
+371:   }
+372:   if (payload.body.trim()) {
+373:     queryParts.push(`body=${encodeURIComponent(payload.body)}`);
+374:   }
+375:   return `mailto:${recipient}${queryParts.length > 0 ? `?${queryParts.join('&')}` : ''}`;
+376: }
+377: 
+378: export function buildGmailComposeUrl(payload: HandoffPayload): string {
+379:   const queryParts: string[] = ['view=cm', 'fs=1'];
+380:   const recipient = normalizeRecipientEmail(payload.to);
+381:   if (recipient) {
+382:     queryParts.push(`to=${encodeURIComponent(recipient)}`);
+383:   }
+384:   if (payload.subject.trim()) {
+385:     queryParts.push(`su=${encodeURIComponent(payload.subject.trim())}`);
+386:   }
+387:   if (payload.body.trim()) {
+388:     queryParts.push(`body=${encodeURIComponent(payload.body)}`);
+389:   }
+390:   return `https://mail.google.com/mail/?${queryParts.join('&')}`;
+391: }
+392: 
+393: export function buildAnyEmailHandoff(payload: HandoffPayload): AnyEmailHandoffBundle {
+394:   const to = normalizeRecipientEmail(payload.to);
+395:   const subject = payload.subject.trim();
+396:   const body = payload.body;
+397:   const clipboardText = [
+398:     to ? `To: ${to}` : null,
+399:     subject ? `Subject: ${subject}` : null,
+400:     '',
+401:     body,
+402:   ]
+403:     .filter((line): line is string => line !== null)
+404:     .join('\n');
+405:   return {
+406:     to,
+407:     subject,
+408:     body,
+409:     mailtoUrl: buildMailtoUrl({ to, subject, body }),
+410:     gmailUrl: buildGmailComposeUrl({ to, subject, body }),
+411:     clipboardText,
+412:   };
+413: }
+414: 
+415: export function buildItemEmailHandoff(
+416:   item: PublicRecordItem,
+417:   agency: AgencyRecord | null,
+418:   options?: RequestLetterOptions
+419: ): AnyEmailHandoffBundle {
+420:   const to = normalizeRecipientEmail(agency?.contactEmail);
+421:   const agencyName = (agency?.name || item.agencyName || '').trim();
+422:   const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
+423:   const shortTitle = cleanSubjectTitle(item.title, item.statuteCode);
+424:   const subjectPrefix =
+425:     toneStyle === 'deadline_follow_up'
+426:       ? `${item.statuteCode} Deadline Follow-Up`
+427:       : toneStyle === 'sweet_courteous'
+428:         ? `${item.statuteCode} Public Records Request (With Thanks)`
+429:         : `${item.statuteCode} Public Records Request`;
+430:   const subject = `${subjectPrefix}: ${shortTitle} - ${agencyName}`;
+431:   const body = buildFormattedRequestText(item, agency, options);
+432:   return buildAnyEmailHandoff({ to, subject, body });
+433: }
+434: 
+435: async function openExternalUrl(url: string): Promise<boolean> {
+436:   if (Platform.OS === 'web' && typeof window !== 'undefined') {
+437:     const opened = window.open(url, '_blank', 'noopener,noreferrer');
+438:     return Boolean(opened);
+439:   }
+440:   const supported = await Linking.canOpenURL(url).catch(() => true);
+441:   if (!supported) return false;
+442:   await Linking.openURL(url);
+443:   return true;
+444: }
+445: 
+446: export function buildEmlDraftContent(bundle: AnyEmailHandoffBundle): string {
+447:   const safeSubject = bundle.subject.replace(/[\r\n]+/g, ' ').trim();
+448:   const safeTo = bundle.to.replace(/[\r\n]+/g, ' ').trim();
+449:   return [
+450:     safeTo ? `To: ${safeTo}` : 'To: ',
+451:     `Subject: ${safeSubject}`,
+452:     'X-Unsent: 1',
+453:     'MIME-Version: 1.0',
+454:     'Content-Type: text/plain; charset=UTF-8',
+455:     '',
+456:     bundle.body,
+457:   ].join('\r\n');
+458: }
+459: 
+460: export async function downloadEmailDraftEml(
+461:   item: PublicRecordItem,
+462:   agency: AgencyRecord | null,
+463:   options?: RequestLetterOptions
+464: ): Promise<HandoffResult> {
+465:   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+466:   const eml = buildEmlDraftContent(bundle);
+467:   if (Platform.OS === 'web' && typeof document !== 'undefined') {
+468:     try {
+469:       const blob = new Blob([eml], { type: 'message/rfc822;charset=utf-8' });
+470:       const blobUrl = URL.createObjectURL(blob);
+471:       const link = document.createElement('a');
+472:       link.href = blobUrl;
+473:       link.download = `${item.id}-draft.eml`;
+474:       document.body.appendChild(link);
+475:       link.click();
+476:       document.body.removeChild(link);
+477:       setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+478:       return {
+479:         ok: true,
+480:         message: 'Downloaded .eml draft—double-click it to open directly in Outlook, Thunderbird, or Apple Mail.',
+481:       };
+482:     } catch {
+483:       return {
+484:         ok: false,
+485:         message: 'Could not download .eml draft. Use Copy Email Packet instead.',
+486:       };
+487:     }
+488:   }
+489:   return {
+490:     ok: false,
+491:     message: 'Direct .eml file download is for desktop/web browsers; use Open Gmail Web or Copy Email Packet.',
+492:   };
+493: }
+494: 
+495: export async function launchGmailWebHandoff(
+496:   item: PublicRecordItem,
+497:   agency: AgencyRecord | null,
+498:   options?: RequestLetterOptions
+499: ): Promise<HandoffResult> {
+500:   const bundle = buildItemEmailHandoff(item, agency, options);
+501:   try {
+502:     const ok = await openExternalUrl(bundle.gmailUrl);
+503:     if (!ok) {
+504:       return {
+505:         ok: false,
+506:         message: 'Could not open Gmail Web automatically. Use Copy Full Packet to paste into any webmail tab.',
+507:       };
+508:     }
+509:     return {
+510:       ok: true,
+511:       message: 'Opened Gmail Web with a formatted request draft ready for review and send.',
+512:     };
+513:   } catch {
+514:     return {
+515:       ok: false,
+516:       message: 'Gmail Web handoff failed. Use Copy Full Packet to paste into any email client.',
+517:     };
+518:   }
+519: }
+520: 
+521: export async function launchEmailHandoff(
+522:   item: PublicRecordItem,
+523:   agency: AgencyRecord | null,
+524:   options?: RequestLetterOptions
+525: ): Promise<HandoffResult> {
+526:   const bundle = buildItemEmailHandoff(item, agency, options);
+527:   try {
+528:     const ok = await openExternalUrl(bundle.mailtoUrl);
+529:     if (!ok) {
+530:       return {
+531:         ok: false,
+532:         message: 'No default mail handler opened. Use Open Gmail Web or Copy Full Packet to avoid Outlook popups.',
+533:       };
+534:     }
+535:     return {
+536:       ok: true,
+537:       message: 'Triggered OS mailto handler (which opens Outlook on default Windows setups). Use Open Gmail Web or Copy Full Packet instead if you do not use Outlook.',
+538:     };
+539:   } catch {
+540:     return {
+541:       ok: false,
+542:       message: 'Mailto handoff failed. Use Open Gmail Web or Copy Full Packet to paste into your email client.',
+543:     };
+544:   }
+545: }
+546: 
+547: export async function launchPortalHandoff(agency: AgencyRecord | null): Promise<HandoffResult> {
+548:   const url = (agency?.portalUrl || '').trim();
+549:   if (!url) {
+550:     return { ok: false, message: 'No public records portal URL configured for this agency.' };
+551:   }
+552:   if (/\.example\.(gov|com|org)(\/|$)/i.test(url)) {
+553:     return {
+554:       ok: false,
+555:       message: `Placeholder portal URL (${url}) is not a live site. Update the agency portal URL in Vault first.`,
+556:     };
+557:   }
+558:   try {
+559:     const ok = await openExternalUrl(url);
+560:     return ok
+561:       ? { ok: true, message: `Opened portal: ${url}` }
+562:       : { ok: false, message: 'Could not open agency portal URL.' };
+563:   } catch {
+564:     return { ok: false, message: 'Failed to open agency portal URL.' };
+565:   }
+566: }
+567: 
+568: export async function scheduleDeadlineReminder(item: PublicRecordItem): Promise<HandoffResult> {
+569:   if (!item.dueDate) {
+570:     return { ok: false, message: 'No statutory due date set on this request yet.' };
+571:   }
+572:   const dueCompact = item.dueDate.replace(/-/g, '');
+573:   if (Platform.OS === 'web' && typeof document !== 'undefined' && /^\d{4}-\d{2}-\d{2}$/.test(item.dueDate)) {
+574:     try {
+575:       const ics = [
+576:         'BEGIN:VCALENDAR',
+577:         'VERSION:2.0',
+578:         'PRODID:-//Records Tracker//9AM Deadline Alert//EN',
+579:         'BEGIN:VEVENT',
+580:         `UID:${item.id}-${dueCompact}@records-tracker`,
+581:         `DTSTART:${dueCompact}T090000`,
+582:         `DTEND:${dueCompact}T093000`,
+583:         `SUMMARY:9:00 AM ${item.statuteCode} Deadline - ${item.title.replace(/[,;]/g, ' ')}`,
+584:         `DESCRIPTION:Agency: ${item.agencyName.replace(/[,;]/g, ' ')} (Ref: ${item.id})`,
+585:         'END:VEVENT',
+586:         'END:VCALENDAR',
+587:       ].join('\r\n');
+588:       const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+589:       const blobUrl = URL.createObjectURL(blob);
+590:       const link = document.createElement('a');
+591:       link.href = blobUrl;
+592:       link.download = `${item.id}-9am-reminder.ics`;
+593:       document.body.appendChild(link);
+594:       link.click();
+595:       document.body.removeChild(link);
+596:       setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+597:       return {
+598:         ok: true,
+599:         message: `Downloaded 9:00 AM calendar reminder (.ics) for ${item.dueDate} and logged reminder.`,
+600:       };
+601:     } catch {
+602:       // Fall through to status message
+603:     }
+604:   }
+605:   return { ok: true, message: `9:00 AM statutory deadline reminder noted for ${item.dueDate}.` };
+606: }
+607: 
+608: export async function launchDefaultMailtoHandoff(
+609:   item: PublicRecordItem,
+610:   agency: AgencyRecord | null,
+611:   options?: RequestLetterOptions
+612: ): Promise<HandoffResult> {
+613:   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+614:   const encodedSubject = encodeURIComponent(bundle.subject);
+615:   const encodedBody = encodeURIComponent(bundle.body);
+616:   const toPart = encodeURIComponent(bundle.to || '');
+617:   const mailtoUrl = `mailto:${toPart}?subject=${encodedSubject}&body=${encodedBody}`;
+618: 
+619:   try {
+620:     const opened = await openExternalUrl(mailtoUrl);
+621:     if (opened) {
+622:       return {
+623:         ok: true,
+624:         message: 'Opened your default mail app/handler. If Edge prompts or does not open, use Download Draft (.eml) or Copy Email Packet.',
+625:       };
+626:     }
+627:     return {
+628:       ok: false,
+629:       message: 'Could not launch default mail handler in Edge. Use Download Draft (.eml) or Copy Email Packet.',
+630:     };
+631:   } catch {
+632:     return {
+633:       ok: false,
+634:       message: 'Default mail handler blocked or unavailable. Use Download Draft (.eml) or Copy Email Packet.',
+635:     };
+636:   }
+637: }
+638: 
+639: export function getProviderWebmailInfo(senderEmail?: string | null): {
+640:   id: 'comcast' | 'outlook' | 'yahoo' | 'gmail' | 'other';
+641:   providerName: string;
+642:   composeUrl: string | null;
+643: } {
+644:   const email = (senderEmail || '').trim().toLowerCase();
+645:   const domain = email.includes('@') ? email.split('@')[1] : '';
+646: 
+647:   if (domain === 'comcast.net' || domain === 'xfinity.com') {
+648:     return {
+649:       id: 'comcast',
+650:       providerName: 'Comcast / Xfinity Webmail',
+651:       composeUrl: 'https://connect.xfinity.com/appsuite/',
+652:     };
+653:   }
+654:   if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com') {
+655:     return {
+656:       id: 'outlook',
+657:       providerName: 'Outlook Web',
+658:       composeUrl: 'https://outlook.live.com/mail/0/deeplink/compose',
+659:     };
+660:   }
+661:   if (domain === 'yahoo.com' || domain === 'ymail.com') {
+662:     return {
+663:       id: 'yahoo',
+664:       providerName: 'Yahoo Mail',
+665:       composeUrl: 'https://mail.yahoo.com/',
+666:     };
+667:   }
+668:   if (domain === 'gmail.com' || domain === 'googlemail.com') {
+669:     return {
+670:       id: 'gmail',
+671:       providerName: 'Gmail Web',
+672:       composeUrl: null,
+673:     };
+674:   }
+675:   return {
+676:     id: 'other',
+677:     providerName: domain ? `${domain} Webmail` : 'Email Client',
+678:     composeUrl: null,
+679:   };
+680: }
+681: 
+682: export async function launchProviderWebmailHandoff(
+683:   item: PublicRecordItem,
+684:   agency: AgencyRecord | null,
+685:   options?: RequestLetterOptions & { senderEmail?: string | null }
+686: ): Promise<HandoffResult> {
+687:   const sender = (options?.senderEmail || item.senderEmail || '').trim();
+688:   const provider = getProviderWebmailInfo(sender);
+689:   const isGmail = /@(gmail|googlemail)\.com$/i.test(sender) || provider.id === 'gmail';
+690: 
+691:   if (isGmail) {
+692:     return launchGmailWebHandoffWithStatute(item, agency, options);
+693:   }
+694: 
+695:   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+696:   if (provider.composeUrl) {
+697:     try {
+698:       const ok = await openExternalUrl(provider.composeUrl);
+699:       if (ok) {
+700:         return {
+701:           ok: true,
+702:           message: `Opened ${provider.providerName}. Confirm you are sending from ${sender || 'your selected account'} before hitting Send.`,
+703:         };
+704:       }
+705:     } catch {
+706:       // fall through to mailto / clipboard guidance
+707:     }
+708:   }
+709: 
+710:   try {
+711:     const mailtoOk = await openExternalUrl(bundle.mailtoUrl);
+712:     if (mailtoOk) {
+713:       return {
+714:         ok: true,
+715:         message: `Opened mail client for ${sender || provider.providerName}. Verify the From address is ${sender || 'your chosen account'} before sending.`,
+716:       };
+717:     }
+718:   } catch {
+719:     // fall through
+720:   }
+721: 
+722:   return {
+723:     ok: false,
+724:     message: `Could not open ${provider.providerName} automatically for ${sender || 'your selected sender'}. Use Copy Email Packet or Download Draft (.eml) and paste into your ${provider.providerName} account.`,
+725:   };
+726: }
+727: 
+728: export interface SmtpSenderConfig {
+729:   host?: string;
+730:   port?: number;
+731:   secure?: boolean;
+732:   user?: string;
+733:   pass?: string;
+734: }
+735: 
+736: export async function sendDirectSmtpEmail(params: {
+737:   from: string;
+738:   to: string;
+739:   subject: string;
+740:   text: string;
+741:   smtp?: SmtpSenderConfig;
+742: }): Promise<HandoffResult> {
+743:   const from = (params.from || '').trim();
+744:   const to = (params.to || '').trim();
+745:   const subject = (params.subject || '').trim();
+746:   const text = params.text || '';
+747: 
+748:   if (!from || !from.includes('@')) {
+749:     return { ok: false, message: 'Select or enter a valid From sender email first.' };
+750:   }
+751:   if (!to || !to.includes('@')) {
+752:     return { ok: false, message: 'Enter a valid To custodian email address before sending.' };
+753:   }
+754:   if (!subject) {
+755:     return { ok: false, message: 'Email subject cannot be empty.' };
+756:   }
+757: 
+758:   try {
+759:     const resp = await fetch('/api/send-email', {
+760:       method: 'POST',
+761:       headers: { 'Content-Type': 'application/json' },
+762:       body: JSON.stringify({ from, to, subject, text, smtp: params.smtp }),
+763:     });
+764:     const data = await resp.json().catch(() => ({}));
+765:     if (!resp.ok || !data?.ok) {
+766:       return {
+767:         ok: false,
+768:         message: data?.error || `Direct send from ${from} failed (HTTP ${resp.status}).`,
+769:       };
+770:     }
+771:     return {
+772:       ok: true,
+773:       message: `Sent directly from ${from} to ${to}${data.messageId ? ` (ID: ${data.messageId})` : ''}.`,
+774:     };
+775:   } catch (err: any) {
+776:     return {
+777:       ok: false,
+778:       message: err?.message || `Network error sending directly from ${from}.`,
+779:     };
+780:   }
+781: }
+=== src\services\requestComposer.ts ===
+1: import { BUNDLED_CATALOG, JurisdictionCode, VaultCatalogEntry } from './vaultCatalog';
+2: 
+3: export interface VaultPatternHint {
+4:   id: string;
+5:   kind: 'form' | 'record';
+6:   jurisdiction: JurisdictionCode;
+7:   title: string;
+8:   agencyName?: string;
+9:   r2Key?: string;
+10:   score: number;
+11: }
+12: 
+13: export function getCatalogStatutesByJurisdiction(jurisdiction: JurisdictionCode, entries: VaultCatalogEntry[] = BUNDLED_CATALOG): VaultCatalogEntry[] {
+14:   return entries.filter((item) => item.kind === 'statute' && item.jurisdiction.toUpperCase() === jurisdiction.toUpperCase());
+15: }
+16: 
+17: export function findVaultPatternHints(query: string, jurisdiction?: JurisdictionCode, entries: VaultCatalogEntry[] = BUNDLED_CATALOG, limit = 5): VaultCatalogEntry[] {
+18:   const tokens = query.toLowerCase().split(/[^a-z0-9-]+/).filter((t) => t.length >= 2);
+19:   const candidates = entries.filter((item) => {
+20:     if (item.kind === 'statute') return false;
+21:     if (jurisdiction && item.jurisdiction.toUpperCase() !== jurisdiction.toUpperCase()) return false;
+22:     return true;
+23:   });
+24:   if (!tokens.length) return candidates.slice(0, limit);
+25:   return candidates.map((item) => {
+26:     const haystack = [item.id, item.kind, item.jurisdiction, item.title, item.code || '', item.citation || '', item.agencyName || '', item.r2Key || '', ...(item.tags || [])].join(' ').toLowerCase();
+27:     let score = 0;
+28:     for (const token of tokens) { if (haystack.includes(token)) score += 1; }
+29:     return { item, score };
+30:   }).filter((row) => row.score > 0).sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title)).slice(0, limit).map((row) => row.item);
+31: }
+32: export function composeStructuredRequest(params: { jurisdiction: JurisdictionCode; agencyName: string; subject: string; statutoryBasis?: string; entries?: VaultCatalogEntry[] }) {
+33:   const statutes = getCatalogStatutesByJurisdiction(params.jurisdiction, params.entries || BUNDLED_CATALOG);
+34:   const basis = params.statutoryBasis || statutes[0]?.citation || statutes[0]?.code || params.jurisdiction;
+35:   return { jurisdiction: params.jurisdiction, agencyName: params.agencyName.trim(), statutoryBasis: basis, statutes, body: `Pursuant to ${basis}, please provide records relating to: ${params.subject.trim()}.` };
+36: }
+=== EMAIL KEYWORD HITS (all of src) ===
+\src\app\explore.tsx:122: {Platform.OS === 'web' && <WebBadge />}
+\src\app\index.tsx:174: if (Platform.OS === 'web') {
+\src\app\index.tsx:190: if (Platform.OS === 'web') {
+\src\screens\RequestDetailScreen.tsx:39: launchDefaultMailtoHandoff,
+\src\screens\RequestDetailScreen.tsx:42: EmailToneStyle,
+\src\screens\RequestDetailScreen.tsx:43: getAvailableEmailTones,
+\src\screens\RequestDetailScreen.tsx:46: launchGmailWebHandoffWithStatute,
+\src\screens\RequestDetailScreen.tsx:157: const [emailTone, setEmailTone] = useState<EmailToneStyle>('clear_professional');
+\src\screens\RequestDetailScreen.tsx:226: if (deadlineMissed && emailTone !== 'deadline_follow_up') {
+\src\screens\RequestDetailScreen.tsx:227: setEmailTone('deadline_follow_up');
+\src\screens\RequestDetailScreen.tsx:228: } else if (!deadlineMissed && emailTone === 'deadline_follow_up') {
+\src\screens\RequestDetailScreen.tsx:229: setEmailTone('sweet_courteous');
+\src\screens\RequestDetailScreen.tsx:231: }, [item, deadlineMissed, emailTone, userPickedTone]);
+\src\screens\RequestDetailScreen.tsx:308: setFeedbackBanner('Select or add a sender account (such as Comcast or Gmail) before marking this request SENT.');
+\src\screens\RequestDetailScreen.tsx:413: const handleApplyEmailToInputs = async (saveImmediately: boolean) => {
+\src\screens\RequestDetailScreen.tsx:480: const availableTones = getAvailableEmailTones(item);
+\src\screens\RequestDetailScreen.tsx:484: toneStyle: emailTone,
+\src\screens\RequestDetailScreen.tsx:490: toneStyle: emailTone,
+\src\screens\RequestDetailScreen.tsx:541: toneStyle: emailTone,
+\src\screens\RequestDetailScreen.tsx:547: const res = await launchDefaultMailtoHandoff(item, agency, {
+\src\screens\RequestDetailScreen.tsx:550: toneStyle: emailTone,
+\src\screens\RequestDetailScreen.tsx:558: setFeedbackBanner('Enter a valid sender email (e.g. name@comcast.net or name@gmail.com).');
+\src\screens\RequestDetailScreen.tsx:596: setFeedbackBanner('Select which email account (such as Comcast or Gmail) you want to send from before launching.');
+\src\screens\RequestDetailScreen.tsx:603: toneStyle: emailTone,
+\src\screens\RequestDetailScreen.tsx:854: const selected = emailTone === toneOption.id;
+\src\screens\RequestDetailScreen.tsx:860: setEmailTone(toneOption.id);
+\src\screens\RequestDetailScreen.tsx:873: {(availableTones.find((t) => t.id === emailTone) || availableTones[0]).outcomeSummary}
+\src\screens\RequestDetailScreen.tsx:1137: onPress={() => void handleApplyEmailToInputs(false)}
+\src\screens\RequestDetailScreen.tsx:1143: onPress={() => void handleApplyEmailToInputs(true)}
+\src\screens\VaultUploadScreen.tsx:201: {Platform.OS === 'web' ? (
+\src\services\database.ts:11: let useMemoryFallback = Platform.OS === 'web';
+\src\services\database.ts:26: if (Platform.OS === 'web' || useMemoryFallback) {
+\src\services\handoff.ts:24: mailtoUrl: string;
+\src\services\handoff.ts:25: gmailUrl: string;
+\src\services\handoff.ts:29: export type EmailToneStyle =
+\src\services\handoff.ts:39: toneStyle?: EmailToneStyle;
+\src\services\handoff.ts:47: toneStyle: EmailToneStyle;
+\src\services\handoff.ts:53: export interface EmailToneOption {
+\src\services\handoff.ts:54: id: EmailToneStyle;
+\src\services\handoff.ts:74: export function getAvailableEmailTones(
+\src\services\handoff.ts:77: ): EmailToneOption[] {
+\src\services\handoff.ts:79: const fourthOption: EmailToneOption = missed
+\src\services\handoff.ts:116: toneStyle: EmailToneStyle = 'clear_professional'
+\src\services\handoff.ts:165: const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
+\src\services\handoff.ts:207: const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
+\src\services\handoff.ts:340: export async function launchGmailWebHandoffWithStatute(
+\src\services\handoff.ts:347: const ok = await openExternalUrl(bundle.gmailUrl);
+\src\services\handoff.ts:351: message: 'Browser blocked the Gmail popup tab—allow popups for this site or use Download Draft (.eml) / Copy Email Packet.',
+\src\services\handoff.ts:356: message: 'Opened Gmail Web with a statute-aligned request draft ready for review and send.',
+\src\services\handoff.ts:361: message: 'Gmail Web handoff failed. Use Copy Full Packet to paste into any email client.',
+\src\services\handoff.ts:366: export function buildMailtoUrl(payload: HandoffPayload): string {
+\src\services\handoff.ts:375: return `mailto:${recipient}${queryParts.length > 0 ? `?${queryParts.join('&')}` : ''}`;
+\src\services\handoff.ts:378: export function buildGmailComposeUrl(payload: HandoffPayload): string {
+\src\services\handoff.ts:409: mailtoUrl: buildMailtoUrl({ to, subject, body }),
+\src\services\handoff.ts:410: gmailUrl: buildGmailComposeUrl({ to, subject, body }),
+\src\services\handoff.ts:422: const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
+\src\services\handoff.ts:436: if (Platform.OS === 'web' && typeof window !== 'undefined') {
+\src\services\handoff.ts:440: const supported = await Linking.canOpenURL(url).catch(() => true);
+\src\services\handoff.ts:442: await Linking.openURL(url);
+\src\services\handoff.ts:467: if (Platform.OS === 'web' && typeof document !== 'undefined') {
+\src\services\handoff.ts:480: message: 'Downloaded .eml draft—double-click it to open directly in Outlook, Thunderbird, or Apple Mail.',
+\src\services\handoff.ts:491: message: 'Direct .eml file download is for desktop/web browsers; use Open Gmail Web or Copy Email Packet.',
+\src\services\handoff.ts:495: export async function launchGmailWebHandoff(
+\src\services\handoff.ts:502: const ok = await openExternalUrl(bundle.gmailUrl);
+\src\services\handoff.ts:506: message: 'Could not open Gmail Web automatically. Use Copy Full Packet to paste into any webmail tab.',
+\src\services\handoff.ts:511: message: 'Opened Gmail Web with a formatted request draft ready for review and send.',
+\src\services\handoff.ts:516: message: 'Gmail Web handoff failed. Use Copy Full Packet to paste into any email client.',
+\src\services\handoff.ts:528: const ok = await openExternalUrl(bundle.mailtoUrl);
+\src\services\handoff.ts:532: message: 'No default mail handler opened. Use Open Gmail Web or Copy Full Packet to avoid Outlook popups.',
+\src\services\handoff.ts:537: message: 'Triggered OS mailto handler (which opens Outlook on default Windows setups). Use Open Gmail Web or Copy Full Packet instead if you do not use Outlook.',
+\src\services\handoff.ts:542: message: 'Mailto handoff failed. Use Open Gmail Web or Copy Full Packet to paste into your email client.',
+\src\services\handoff.ts:573: if (Platform.OS === 'web' && typeof document !== 'undefined' && /^\d{4}-\d{2}-\d{2}$/.test(item.dueDate)) {
+\src\services\handoff.ts:608: export async function launchDefaultMailtoHandoff(
+\src\services\handoff.ts:617: const mailtoUrl = `mailto:${toPart}?subject=${encodedSubject}&body=${encodedBody}`;
+\src\services\handoff.ts:620: const opened = await openExternalUrl(mailtoUrl);
+\src\services\handoff.ts:640: id: 'comcast' | 'outlook' | 'yahoo' | 'gmail' | 'other';
+\src\services\handoff.ts:654: if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com') {
+\src\services\handoff.ts:656: id: 'outlook',
+\src\services\handoff.ts:657: providerName: 'Outlook Web',
+\src\services\handoff.ts:658: composeUrl: 'https://outlook.live.com/mail/0/deeplink/compose',
+\src\services\handoff.ts:661: if (domain === 'yahoo.com' || domain === 'ymail.com') {
+\src\services\handoff.ts:663: id: 'yahoo',
+\src\services\handoff.ts:664: providerName: 'Yahoo Mail',
+\src\services\handoff.ts:665: composeUrl: 'https://mail.yahoo.com/',
+\src\services\handoff.ts:668: if (domain === 'gmail.com' || domain === 'googlemail.com') {
+\src\services\handoff.ts:670: id: 'gmail',
+\src\services\handoff.ts:671: providerName: 'Gmail Web',
+\src\services\handoff.ts:689: const isGmail = /@(gmail|googlemail)\.com$/i.test(sender) || provider.id === 'gmail';
+\src\services\handoff.ts:691: if (isGmail) {
+\src\services\handoff.ts:692: return launchGmailWebHandoffWithStatute(item, agency, options);
+\src\services\handoff.ts:706: // fall through to mailto / clipboard guidance
+\src\services\handoff.ts:711: const mailtoOk = await openExternalUrl(bundle.mailtoUrl);
+\src\services\handoff.ts:712: if (mailtoOk) {
+\src\services\packetBuilder.ts:179: if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+=== package.json ===
+{
+  "name": "records-tracker",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@expo/ui": "~58.0.29",
+    "@types/nodemailer": "^8.0.2",
+    "expo": "~58.0.26",
+    "expo-clipboard": "~58.0.4",
+    "expo-constants": "~58.0.16",
+    "expo-device": "~58.0.5",
+    "expo-file-system": "~58.0.14",
+    "expo-font": "~58.0.12",
+    "expo-glass-effect": "~58.0.5",
+    "expo-haptics": "~58.0.8",
+    "expo-image": "~58.0.18",
+    "expo-linking": "~58.0.17",
+    "expo-mail-composer": "~58.0.4",
+    "expo-notifications": "~58.1.9",
+    "expo-print": "~58.0.9",
+    "expo-router": "~58.0.32",
+    "expo-secure-store": "~58.0.3",
+    "expo-sharing": "~58.0.23",
+    "expo-splash-screen": "~58.0.14",
+    "expo-sqlite": "~58.0.18",
+    "expo-status-bar": "~58.0.5",
+    "expo-symbols": "~58.0.5",
+    "expo-system-ui": "~58.0.7",
+    "expo-web-browser": "~58.1.0",
+    "nodemailer": "^10.6.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-gesture-handler": "~3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1",
+    "react-native-web": "~0.21.4",
+    "react-native-webview": "14.0.1",
+    "react-native-worklets": "0.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "reset-project": "node ./scripts/reset-project.js",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "lint": "expo lint"
+  },
+  "private": true
+}
+=== app.json ===
+{
+  "expo": {
+    "name": "records-tracker",
+    "slug": "records-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "recordstracker",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "icon": "./assets/expo.icon"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 76
+        }
+      ],
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-mail-composer",
+      "expo-sharing"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

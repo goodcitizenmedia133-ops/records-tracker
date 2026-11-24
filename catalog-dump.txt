@@ -1,0 +1,110 @@
+﻿=== vaultCatalog.ts line 47 to end ===
+export function saveLocalStagedCatalogEntry(entry: VaultCatalogEntry): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const existing = readLocalStagedCatalogEntries();
+    const merged = dedupeCatalogEntries([entry, ...existing]);
+    window.localStorage.setItem(LOCAL_STAGED_CATALOG_KEY, JSON.stringify(merged));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function buildCatalogIndexPath(jurisdiction?: JurisdictionCode): string {
+  return jurisdiction ? `index/${jurisdiction}.json` : 'index/catalog.json';
+}
+
+export function formatCatalogCommitPayload(entry: VaultCatalogEntry, jurisdiction?: JurisdictionCode) {
+  return { path: buildCatalogIndexPath(jurisdiction || entry.jurisdiction), entry };
+}
+
+export async function loadVaultCatalog(jurisdiction?: JurisdictionCode): Promise<VaultCatalogEntry[]> {
+  const repo = (process.env.EXPO_PUBLIC_VAULT_GITHUB_REPO || DEFAULT_VAULT_CONFIG.githubIndexRepo).trim();
+  const branch = (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || DEFAULT_VAULT_CONFIG.githubIndexBranch || 'master').trim();
+  const localStaged = readLocalStagedCatalogEntries();
+  const filterByJurisdiction = (items: VaultCatalogEntry[]) =>
+    jurisdiction ? items.filter((item) => item.jurisdiction === jurisdiction) : items;
+
+  if (!repo) {
+    return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...BUNDLED_CATALOG]));
+  }
+  try {
+    const url = `https://raw.githubusercontent.com/${repo}/${branch}/${buildCatalogIndexPath(jurisdiction)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...BUNDLED_CATALOG]));
+    }
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : BUNDLED_CATALOG;
+    return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...list, ...BUNDLED_CATALOG]));
+  } catch {
+    return dedupeCatalogEntries(filterByJurisdiction([...localStaged, ...BUNDLED_CATALOG]));
+  }
+}
+
+export function resolveIndexFileForState(stateCode: string): string {
+  const clean = stateCode.trim().toUpperCase();
+  if (clean === 'CO' || clean === 'COLORADO' || clean === 'US-CO') return 'index/US-CO.json';
+  if (clean === 'FED' || clean === 'FEDERAL' || clean === 'US-FED') return 'index/US-FED.json';
+  return 'index/catalog.json';
+}
+
+export function dedupeCatalogEntries(items: VaultCatalogEntry[]): VaultCatalogEntry[] {
+  const seen = new Set<string>();
+  const out: VaultCatalogEntry[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const key = String(item.id || '').trim() || String((item as any).sha256Hex || '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+=== vaultPublisher.ts lines 1-45 ===
+import { evaluateVaultUpload, VaultCatalogEntry, VaultGuardInput, VaultGuardResult } from '../utils/vaultPdfGuard';
+import { buildCatalogIndexPath } from './vaultCatalog';
+
+export interface VaultConfig {
+  r2PublicBaseUrl: string;
+  githubIndexRepo: string;
+  githubIndexBranch: string;
+  presignedUploadEndpoint: string;
+}
+
+export interface VaultPublishOutcome {
+  guard: VaultGuardResult;
+  published: boolean;
+  remoteUploaded: boolean;
+  publicUrl: string | null;
+  catalogJsonSnippet: string;
+  message: string;
+}
+
+export const DEFAULT_VAULT_CONFIG: VaultConfig = {
+  r2PublicBaseUrl: (process.env.EXPO_PUBLIC_VAULT_R2_BASE_URL || 'https://github.com/goodcitizenmedia133-ops/records-vault-index/releases/download/vault-pdfs').trim(),
+  githubIndexRepo: (process.env.EXPO_PUBLIC_VAULT_GITHUB_REPO || 'goodcitizenmedia133-ops/records-vault-index').trim(),
+  githubIndexBranch: (process.env.EXPO_PUBLIC_VAULT_GITHUB_BRANCH || 'master').trim(),
+  presignedUploadEndpoint: (process.env.EXPO_PUBLIC_VAULT_PRESIGN_ENDPOINT || '/api/vault/publish').trim(),
+};
+
+export async function computeSha256Hex(bytes: Uint8Array): Promise<string> {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle) {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', copy.buffer);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  let hash = 2166136261;
+  for (let i = 0; i < bytes.length; i += 1) {
+    hash ^= bytes[i];
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function buildVaultCatalogPayload(entry: VaultCatalogEntry, publicUrl: string | null): string {
+  return JSON.stringify({ ...entry, publicUrl }, null, 2);

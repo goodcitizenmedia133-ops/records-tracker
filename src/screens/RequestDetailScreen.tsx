@@ -1,3 +1,4 @@
+import * as DocumentPicker from 'expo-document-picker';
 import * as Clipboard from 'expo-clipboard';
 import {
   useCallback,
@@ -37,7 +38,9 @@ import {
     downloadEmailDraftEml,
     getProviderWebmailInfo,
     launchDefaultMailtoHandoff,
-    launchProviderWebmailHandoff,
+    ProviderComposeId,
+  detectProviderComposeId,
+  launchProviderWebmailHandoff,
   sendDirectSmtpEmail,
     EmailToneStyle,
     getAvailableEmailTones,
@@ -137,6 +140,17 @@ export function RequestDetailScreen({
     return {};
   });
   const [isSendingDirect, setIsSendingDirect] = useState(false);
+  const [selectedProviderByEmail, setSelectedProviderByEmail] = useState<Record<string, ProviderComposeId>>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem('gcm_sender_provider_v1');
+        if (raw) return JSON.parse(raw);
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    return {};
+  });
   const [copiedPacketFeedback, setCopiedPacketFeedback] = useState(false);
   const [copiedHeaderFeedback, setCopiedHeaderFeedback] = useState(false);
   const [newSenderLabel, setNewSenderLabel] = useState('');
@@ -602,6 +616,7 @@ export function RequestDetailScreen({
       preferredFormat: preferredFormatInput,
       toneStyle: emailTone,
       senderEmail: activeSender,
+      providerId: selectedProviderByEmail[activeSender.toLowerCase()] || detectProviderComposeId(activeSender),
     });
     setFeedbackBanner(res.message);
   };
@@ -724,6 +739,35 @@ export function RequestDetailScreen({
       setAudits(log);
     }
     setFeedbackBanner(res.message);
+  };
+
+
+  const handleUploadReplyPdf = async () => {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled || !picked.assets || picked.assets.length === 0) {
+        return;
+      }
+      const asset = picked.assets[0];
+      const sizeKb = typeof asset.size === 'number' ? ` (${Math.max(1, Math.round(asset.size / 1024))} KB)` : '';
+      await addAuditEntry({
+        id: `aud-${Date.now()}-pdf`,
+        itemId: item.id,
+        action: 'REPLY_PDF_UPLOADED',
+        detail: `Attached agency reply PDF: ${asset.name}${sizeKb}${asset.uri ? ` [${asset.uri}]` : ''}`,
+        createdAt: new Date().toISOString(),
+      });
+      const log = await getAuditEntries(item.id);
+      setAudits(log);
+      onUpdated();
+      setFeedbackBanner(`Logged agency reply PDF: ${asset.name}${sizeKb}.`);
+    } catch (err: any) {
+      setFeedbackBanner(err?.message || 'Could not pick PDF file.');
+    }
   };
 
   const handleExportPdf = async () => {
@@ -1038,6 +1082,12 @@ export function RequestDetailScreen({
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Status &amp; Statutory Clock</Text>
+        <Pressable
+          onPress={() => void handleStatusChange('sent')}
+          style={[styles.actionBtn, styles.primaryActionBtn]}
+        >
+          <Text style={styles.primaryActionBtnText}>Mark as sent</Text>
+        </Pressable>
         <View style={styles.statusGrid}>
           {STATUS_ACTIONS.map((act) => {
             const active = item.status === act.status;
@@ -1094,6 +1144,9 @@ export function RequestDetailScreen({
             onValueChange={setScrubPiiOnExport}
           />
         </View>
+        <Pressable onPress={() => void handleUploadReplyPdf()} style={styles.actionBtn}>
+          <Text style={styles.actionBtnText}>Upload Agency Reply (PDF)</Text>
+        </Pressable>
         <Pressable onPress={handleExportPdf} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>
             Export &amp; Share PDF Packet
