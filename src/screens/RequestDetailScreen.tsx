@@ -117,6 +117,7 @@ export function RequestDetailScreen({
   const [selectedSenderEmail, setSelectedSenderEmail] = useState('');
   const [pendingSwitchSender, setPendingSwitchSender] = useState<string | null>(null);
   const [pendingSendConfirmation, setPendingSendConfirmation] = useState(false);
+  const [showSenderPickerBeforeLaunch, setShowSenderPickerBeforeLaunch] = useState(false);
   const [copiedPacketFeedback, setCopiedPacketFeedback] = useState(false);
   const [copiedHeaderFeedback, setCopiedHeaderFeedback] = useState(false);
   const [newSenderLabel, setNewSenderLabel] = useState('');
@@ -558,6 +559,12 @@ export function RequestDetailScreen({
 
     const handleEmail = async () => {
     const activeSender = (selectedSenderEmail || item?.senderEmail || '').trim();
+    if (!activeSender) {
+      setShowSenderPickerBeforeLaunch(true);
+      setFeedbackBanner('Select which email account (such as Comcast or Gmail) you want to send from before launching.');
+      return;
+    }
+    setShowSenderPickerBeforeLaunch(false);
     const res = await launchProviderWebmailHandoff(item!, agency, {
       requesterSignOff: effectiveSignOff,
       preferredFormat: preferredFormatInput,
@@ -712,8 +719,9 @@ export function RequestDetailScreen({
         <View style={styles.actionGrid}>
           <Pressable onPress={handleEmail} style={[styles.actionBtn, styles.primaryActionBtn]}>
             <Text style={styles.primaryActionBtnText}>
-              Launch {getProviderWebmailInfo(selectedSenderEmail || item.senderEmail).providerName}
-              {(selectedSenderEmail || item.senderEmail) ? ` (${selectedSenderEmail || item.senderEmail})` : ''}
+              {(selectedSenderEmail || item.senderEmail)
+                ? `Launch ${getProviderWebmailInfo(selectedSenderEmail || item.senderEmail).providerName} (${selectedSenderEmail || item.senderEmail})`
+                : 'Choose Sender & Launch'}
             </Text>
           </Pressable>
           <Pressable onPress={handleCopyText} style={styles.actionBtn}>
