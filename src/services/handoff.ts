@@ -334,7 +334,7 @@ export async function launchGmailWebHandoffWithStatute(
   } catch {
     return {
       ok: false,
-      message: 'Webmail handoff failed. Use Copy Full Packet to paste into your email client.',
+      message: 'Could not open webmail. Use Copy Full Packet to paste into your email client.',
     };
   }
 }
@@ -499,7 +499,7 @@ export async function launchGmailWebHandoff(
   } catch {
     return {
       ok: false,
-      message: 'Webmail handoff failed. Use Copy Full Packet to paste into your email client.',
+      message: 'Could not open webmail. Use Copy Full Packet to paste into your email client.',
     };
   }
 }
@@ -525,7 +525,7 @@ export async function launchEmailHandoff(
   } catch {
     return {
       ok: false,
-      message: 'Mailto handoff failed. Use Open Gmail Web or Copy Full Packet to paste into your email client.',
+      message: 'Could not open your mail app. Use Open Gmail Web or Copy Full Packet to paste into your email client.',
     };
   }
 }

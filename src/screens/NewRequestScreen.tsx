@@ -401,7 +401,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
           </View>
         ) : null}
 
-        <Text style={styles.label}>Custodian Email (saved with agency for handoff)</Text>
+        <Text style={styles.label}>Custodian Email (saved with agency for email)</Text>
         <TextInput
           value={custodianEmail}
           onChangeText={setCustodianEmail}
@@ -462,7 +462,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
           style={styles.primaryBtn}
         >
           <Text style={styles.primaryBtnText}>
-            {saving ? 'Saving...' : 'Create Request & Open Handoff'}
+            {saving ? 'Saving...' : 'Create Request & Open Email'}
           </Text>
         </Pressable>
 
@@ -477,7 +477,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
                   onPress={() => onCreated(createdItem.id)}
                   style={styles.secondaryBtn}
                 >
-                  <Text style={styles.secondaryBtnText}>Open Request Handoff</Text>
+                  <Text style={styles.secondaryBtnText}>Open in Email</Text>
                 </Pressable>
               ) : null}
               <Pressable onPress={handleClose} style={styles.secondaryBtn}>

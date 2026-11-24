@@ -332,7 +332,7 @@ export function RequestDetailScreen({
     ) {
       setPendingSendConfirmation(true);
       setFeedbackBanner(
-        `This request is bound to ${boundSender}, but ${activeSender} is active. Tap Mark Sent again to confirm sending from ${activeSender}.`
+        `This request is set to send from ${boundSender}, but ${activeSender} is selected. Tap Mark Sent again to confirm sending from ${activeSender}.`
       );
       return;
     }
@@ -423,7 +423,7 @@ export function RequestDetailScreen({
     }
     const parsed = parseRawEmailText(cleanRaw, { scrubPii: scrubEmailPii });
     setParsedEmail(parsed);
-    setFeedbackBanner('Parsed email fields and scrubbed PII preview.');
+    setFeedbackBanner('Read email fields and hid personal info in preview.');
   };
 
   const handleApplyEmailToInputs = async (saveImmediately: boolean) => {
@@ -602,7 +602,7 @@ export function RequestDetailScreen({
     } catch {
       // ignore storage errors
     }
-    setFeedbackBanner(`Bound request to sender account: ${cleanLabel} (${cleanEmail})`);
+    setFeedbackBanner(`Sending account set to: ${cleanLabel} (${cleanEmail})`);
   };
 
     const handleEmail = async () => {
@@ -1149,7 +1149,7 @@ export function RequestDetailScreen({
         <Text style={styles.sectionTitle}>Compliance &amp; Audit Packet</Text>
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>
-            Scrub PII (SSN, phone, email, address) on export
+            Hide Personal Info (SSN, phone, email, address) on export
           </Text>
           <Switch
             value={scrubPiiOnExport}

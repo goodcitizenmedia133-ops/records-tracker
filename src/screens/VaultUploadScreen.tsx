@@ -150,7 +150,7 @@ export function VaultUploadScreen({ onBack }: VaultUploadScreenProps) {
             style={[styles.modeBtn, uploadMode === 'scrubbed_response' && styles.modeBtnActive]}
           >
             <Text style={[styles.modeText, uploadMode === 'scrubbed_response' && styles.modeTextActive]}>
-              Scrubbed Record
+              Redacted Copy
             </Text>
           </Pressable>
           <Pressable
@@ -238,7 +238,7 @@ export function VaultUploadScreen({ onBack }: VaultUploadScreenProps) {
           </View>
         ) : (
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Scrub PII (SSN, phone, email, street address, IDs)</Text>
+            <Text style={styles.switchLabel}>Hide Personal Info (SSN, phone, email, street address, IDs)</Text>
             <Switch value={scrubPiiEnabled} onValueChange={setScrubPiiEnabled} />
           </View>
         )}

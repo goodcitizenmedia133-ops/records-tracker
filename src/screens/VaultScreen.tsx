@@ -157,7 +157,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.heading}>Agencies, PII Scrubber &amp; Vault</Text>
+      <Text style={styles.heading}>Agencies, Personal Info Redactor &amp; Vault</Text>
       <Text style={styles.sub}>
         100% local SQLite storage ? zero cloud sync
       </Text>
@@ -328,7 +328,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Local PII Scrubber</Text>
+        <Text style={styles.sectionTitle}>Hide Personal Info (Local)</Text>
         <Text style={styles.muted}>
           Strips SSNs, phone numbers, emails, street addresses, and case/ID
           numbers locally before sharing.
@@ -343,7 +343,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
           textAlignVertical="top"
         />
         <Pressable onPress={handleRunScrubber} style={styles.darkBtn}>
-          <Text style={styles.darkBtnText}>Scrub Personal Info</Text>
+          <Text style={styles.darkBtnText}>Hide Personal Info</Text>
         </Pressable>
 
         {piiCount !== null ? (
