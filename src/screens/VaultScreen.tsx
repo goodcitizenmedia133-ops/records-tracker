@@ -42,6 +42,8 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
 
   const [catalogEntries, setCatalogEntries] = useState<VaultCatalogEntry[]>(BUNDLED_CATALOG);
   const [catalogFilter, setCatalogFilter] = useState('');
+  const [agencySearch, setAgencySearch] = useState('');
+  const [agencyStatuteFilter, setAgencyStatuteFilter] = useState<'ALL' | StatuteCode>('ALL');
 
   const [piiInput, setPiiInput] = useState('');
   const [piiOutput, setPiiOutput] = useState('');
@@ -58,9 +60,12 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
   const refreshCatalog = useCallback(async () => {
     try {
       const entries = await loadVaultCatalog();
-      if (entries.length > 0) setCatalogEntries(entries);
+      const next = entries.length > 0 ? entries : BUNDLED_CATALOG;
+      setCatalogEntries(next);
+      setStatusBanner(`Catalog refreshed (${next.length} entries available).`);
     } catch {
       setCatalogEntries(BUNDLED_CATALOG);
+      setStatusBanner(`Using bundled catalog (${BUNDLED_CATALOG.length} entries).`);
     }
   }, []);
 
@@ -271,7 +276,45 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
         <Text style={styles.listHeader}>
           Saved Agencies ({agencies.length})
         </Text>
-        {agencies.map((a) => (
+        <TextInput
+          value={agencySearch}
+          onChangeText={setAgencySearch}
+          placeholder="Search agencies by name, jurisdiction, or email..."
+          placeholderTextColor="#9CA3AF"
+          style={styles.input}
+        />
+        <View style={styles.statuteRow}>
+          {(['ALL', ...STATUTE_CHOICES] as const).map((code) => {
+            const active = agencyStatuteFilter === code;
+            return (
+              <Pressable
+                key={code}
+                onPress={() => setAgencyStatuteFilter(code)}
+                style={[styles.chipBtn, active && styles.chipBtnActive]}
+              >
+                <Text style={[styles.chipBtnText, active && styles.chipBtnTextActive]}>
+                  {code}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {agencies
+          .filter((a) => {
+            const matchesStatute =
+              agencyStatuteFilter === 'ALL' ||
+              (a.defaultStatute || '').toUpperCase() === agencyStatuteFilter;
+            if (!matchesStatute) return false;
+            const q = agencySearch.trim().toLowerCase();
+            if (!q) return true;
+            return (
+              a.name.toLowerCase().includes(q) ||
+              a.jurisdiction.toLowerCase().includes(q) ||
+              (a.contactEmail || '').toLowerCase().includes(q) ||
+              (a.defaultStatute || '').toLowerCase().includes(q)
+            );
+          })
+          .map((a) => (
           <View key={a.id} style={styles.agencyRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.agencyName}>{a.name}</Text>

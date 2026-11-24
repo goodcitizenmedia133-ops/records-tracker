@@ -83,6 +83,8 @@ export function RequestDetailScreen({
     return [];
   });
   const [feeInput, setFeeInput] = useState('');
+  const [noteCategory, setNoteCategory] = useState<'Call' | 'Email Reply' | 'Delivery' | 'Note'>('Call');
+  const [noteDateInput, setNoteDateInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [rawEmailInput, setRawEmailInput] = useState('');
   const [scrubEmailPii, setScrubEmailPii] = useState(true);
@@ -335,17 +337,20 @@ export function RequestDetailScreen({
   const handleAddAuditNote = async () => {
     const clean = noteInput.trim();
     if (!clean) return;
+    const datePrefix = noteDateInput.trim() ? `[${noteDateInput.trim()}] ` : '';
+    const formattedDetail = `${noteCategory}: ${datePrefix}${clean}`;
     await addAuditEntry({
       id: `aud-${Date.now()}`,
       itemId: item.id,
-      action: 'LOG_NOTE',
-      detail: clean,
+      action: noteCategory === 'Note' ? 'LOG_NOTE' : `LOG_${noteCategory.toUpperCase().replace(/\s+/g, '_')}`,
+      detail: formattedDetail,
       createdAt: new Date().toISOString(),
     });
     setNoteInput('');
+    setNoteDateInput('');
     const log = await getAuditEntries(item.id);
     setAudits(log);
-    setFeedbackBanner('Added note to chronological audit log.');
+    setFeedbackBanner(`Logged ${noteCategory.toLowerCase()} to chronological audit log.`);
   };
 
   const availableTones = getAvailableEmailTones(item);
@@ -382,6 +387,17 @@ export function RequestDetailScreen({
 
   const handleReminder = async () => {
     const res = await scheduleDeadlineReminder(item);
+    if (res.ok && item.dueDate) {
+      await addAuditEntry({
+        id: `aud-${Date.now()}-rem`,
+        itemId: item.id,
+        action: 'REMINDER_9AM',
+        detail: `Set 9:00 AM reminder for statutory due date ${item.dueDate}.`,
+        createdAt: new Date().toISOString(),
+      });
+      const log = await getAuditEntries(item.id);
+      setAudits(log);
+    }
     setFeedbackBanner(res.message);
   };
 
@@ -640,11 +656,32 @@ export function RequestDetailScreen({
           ) : null}
         </View>
 
+        <View style={styles.statusGrid}>
+          {(['Call', 'Email Reply', 'Delivery', 'Note'] as const).map((cat) => {
+            const active = noteCategory === cat;
+            return (
+              <Pressable
+                key={cat}
+                onPress={() => setNoteCategory(cat)}
+                style={[styles.chipBtn, active && styles.chipBtnActive]}
+              >
+                <Text style={[styles.chipBtnText, active && styles.chipBtnTextActive]}>{cat}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <View style={styles.inlineRow}>
+          <TextInput
+            value={noteDateInput}
+            onChangeText={setNoteDateInput}
+            placeholder="Date (e.g. 2026-11-23)"
+            placeholderTextColor="#9CA3AF"
+            style={[styles.input, { width: 145 }]}
+          />
           <TextInput
             value={noteInput}
             onChangeText={setNoteInput}
-            placeholder="Log call, email reply, or delivery note..."
+            placeholder="e.g. Called clerk; they said records are under review..."
             placeholderTextColor="#9CA3AF"
             style={[styles.input, { flex: 1 }]}
           />

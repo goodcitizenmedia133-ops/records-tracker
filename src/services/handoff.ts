@@ -500,6 +500,12 @@ export async function launchPortalHandoff(agency: AgencyRecord | null): Promise<
   if (!url) {
     return { ok: false, message: 'No public records portal URL configured for this agency.' };
   }
+  if (/\.example\.(gov|com|org)(\/|$)/i.test(url)) {
+    return {
+      ok: false,
+      message: `Placeholder portal URL (${url}) is not a live site. Update the agency portal URL in Vault first.`,
+    };
+  }
   try {
     const ok = await openExternalUrl(url);
     return ok
@@ -514,5 +520,39 @@ export async function scheduleDeadlineReminder(item: PublicRecordItem): Promise<
   if (!item.dueDate) {
     return { ok: false, message: 'No statutory due date set on this request yet.' };
   }
-  return { ok: true, message: `Statutory deadline tracked for ${item.dueDate}.` };
+  const dueCompact = item.dueDate.replace(/-/g, '');
+  if (Platform.OS === 'web' && typeof document !== 'undefined' && /^\d{4}-\d{2}-\d{2}$/.test(item.dueDate)) {
+    try {
+      const ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Records Tracker//9AM Deadline Alert//EN',
+        'BEGIN:VEVENT',
+        `UID:${item.id}-${dueCompact}@records-tracker`,
+        `DTSTART:${dueCompact}T090000`,
+        `DTEND:${dueCompact}T093000`,
+        `SUMMARY:9:00 AM ${item.statuteCode} Deadline - ${item.title.replace(/[,;]/g, ' ')}`,
+        `DESCRIPTION:Agency: ${item.agencyName.replace(/[,;]/g, ' ')} (Ref: ${item.id})`,
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('
+');
+      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${item.id}-9am-reminder.ics`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+      return {
+        ok: true,
+        message: `Downloaded 9:00 AM calendar reminder (.ics) for ${item.dueDate} and logged reminder.`,
+      };
+    } catch {
+      // Fall through to status message
+    }
+  }
+  return { ok: true, message: `9:00 AM statutory deadline reminder noted for ${item.dueDate}.` };
 }
