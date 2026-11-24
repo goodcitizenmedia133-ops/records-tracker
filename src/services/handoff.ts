@@ -707,6 +707,34 @@ export function buildProviderComposeUrl(id: ProviderComposeId, payload: HandoffP
   return buildMailtoUrl(payload);
 }
 
+async function copyPacketTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to execCommand fallback
+  }
+  try {
+    if (typeof document !== 'undefined' && document.body) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (ok) return true;
+    }
+  } catch {
+    // ignore fallback errors
+  }
+  return false;
+}
+
 export async function launchProviderWebmailHandoff(
   item: PublicRecordItem,
   agency: AgencyRecord | null,
@@ -716,30 +744,57 @@ export async function launchProviderWebmailHandoff(
   const detected = detectProviderComposeId(sender);
   const id: ProviderComposeId = options?.providerId || detected;
   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
-  const url = buildProviderComposeUrl(id, { to: bundle.to, subject: bundle.subject, body: bundle.body });
+  const recipient = normalizeRecipientEmail(bundle.to);
+  const subjectLine = bundle.subject.trim();
+  const packetText = [
+    `From: ${sender || '(select in mail client)'}`,
+    `To: ${recipient}`,
+    `Subject: ${subjectLine}`,
+    '',
+    bundle.body,
+  ].join('\n');
+
+  const url = buildProviderComposeUrl(id, { to: recipient, subject: subjectLine, body: bundle.body });
   const limit = id === 'mailto' ? 1900 : 8000;
-  if (url.length > limit) {
-    return { ok: false, message: 'This letter is too long to prefill through a link. Use Download Email File (.eml) or Copy Email Packet.' };
-  }
   const who = sender || 'your chosen account';
+
+  if (id !== 'proton' && url.length > limit) {
+    await copyPacketTextToClipboard(packetText);
+    return {
+      ok: false,
+      message: 'This letter is too long for a URL query string. Copied To, Subject, and Body to clipboard—paste into your email client, send, then tap Mark Sent.',
+    };
+  }
+
+  let copiedPacket = false;
+  if (id === 'proton') {
+    copiedPacket = await copyPacketTextToClipboard(packetText);
+  }
+
   try {
     const ok = await openExternalUrl(url);
     if (ok) {
       if (id === 'proton') {
         return {
           ok: true,
-          message: `Opened Proton Mail (https://mail.proton.me/) for ${who}. Use Copy Email Packet if you want To, Subject, and Body pasted quickly.`,
+          message: copiedPacket
+            ? `Step 1 Done: Copied To (${recipient}), Subject, and Body to clipboard and opened Proton Mail for ${who}. Step 2: Paste into Proton, review, sign, and send. Step 3: Tap Mark Sent below to track it.`
+            : `Step 1 Done: Opened Proton Mail for ${who}. Tap Copy Email Packet to grab To (${recipient}), Subject, and Body, paste into Proton, sign, send, then tap Mark Sent.`,
         };
       }
       return {
         ok: true,
-        message: `Opened ${id === 'mailto' ? 'your mail app' : id} draft for ${who}. Confirm the From address is ${who} before sending.`,
+        message: `Step 1 Done: Opened ${id === 'mailto' ? 'your mail app' : id} for ${who}. Step 2: Confirm From (${who}), To (${recipient}), Subject, and Body, sign, and send. Step 3: Tap Mark Sent below to track it.`,
       };
     }
   } catch {
     // fall through
   }
-  return { ok: false, message: 'Could not open your mail provider automatically. Use Download Email File (.eml) or Copy Email Packet.' };
+  await copyPacketTextToClipboard(packetText);
+  return {
+    ok: false,
+    message: 'Could not open your mail provider automatically. Copied To, Subject, and Body to clipboard—paste into your email client, send, then tap Mark Sent.',
+  };
 }
 
 export interface SmtpSenderConfig {

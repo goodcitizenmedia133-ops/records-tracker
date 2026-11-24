@@ -94,6 +94,7 @@ export function RequestDetailScreen({
   const [auditFilter, setAuditFilter] = useState<'all' | 'sent' | 'pdf' | 'notes'>('all');
   const [confirmDeleteAuditId, setConfirmDeleteAuditId] = useState<string | null>(null);
   const [confirmDeleteRequest, setConfirmDeleteRequest] = useState(false);
+  const [handoffAwaitingSend, setHandoffAwaitingSend] = useState(false);
   const [archivedAuditIds, setArchivedAuditIds] = useState<string[]>(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -339,6 +340,7 @@ export function RequestDetailScreen({
       return;
     }
     setPendingSendConfirmation(false);
+    if (nextStatus === 'sent') setHandoffAwaitingSend(false);
     const senderTag = activeSender ? ` via ${activeSender}` : '';
     const clockNote =
       nextStatus === 'sent'
@@ -560,6 +562,9 @@ export function RequestDetailScreen({
       preferredFormat: preferredFormatInput,
       toneStyle: emailTone,
     });
+    if (res.ok) {
+      setHandoffAwaitingSend(true);
+    }
     setFeedbackBanner(res.message);
   };
 
@@ -1154,11 +1159,18 @@ export function RequestDetailScreen({
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Status &amp; Response Deadline</Text>
+        {handoffAwaitingSend && item.status !== 'sent' ? (
+          <Text style={styles.mutedText}>
+            After sending in your email client (Proton, webmail, or mail app), tap below so the tracker records SENT and starts the response clock.
+          </Text>
+        ) : null}
         <Pressable
           onPress={() => void handleStatusChange('sent')}
           style={[styles.actionBtn, styles.primaryActionBtn]}
         >
-          <Text style={styles.primaryActionBtnText}>Mark as sent</Text>
+          <Text style={styles.primaryActionBtnText}>
+            {handoffAwaitingSend && item.status !== 'sent' ? 'I Sent This Email — Mark Sent' : 'Mark as sent'}
+          </Text>
         </Pressable>
         <View style={styles.statusGrid}>
           {STATUS_ACTIONS.map((act) => {
