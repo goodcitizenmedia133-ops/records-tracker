@@ -70,6 +70,12 @@ export const STATUTORY_CLAUSES = {
     'Pursuant to the Michigan Freedom of Information Act, MCL 15.231 et seq. (including MCL 15.235), please treat this electronic transmission as received on the next business day and provide responsive public records electronically where maintained in digital form.',
   mifoiaFeeItemizationAndReductionNotice:
     'Pursuant to MCL 15.234, please provide a detailed fee itemization before assessing charges, apply any statutory fee waivers or 5%-per-day (up to 50%) late-response labor fee reductions under MCL 15.234(9) where applicable, and state your response or single 10-business-day extension under MCL 15.235(2).',
+  mifoiaAppealsAndPenalties:
+    'Pursuant to MCL 15.236, MCL 15.240, MCL 15.240a, and MCL 15.240b, please direct this request to the designated FOIA Coordinator and provide written notice of any statutory exemptions, appeal rights (180-day civil action / internal appeal window, or 45-day fee challenge window), and any applicable fee or deposit itemization.',
+  michiganCompanionNotes: {
+    openMeetingsMinutes: 'Open Meetings Act (MCL 15.269): proposed minutes within 8 business days; approved minutes within 5 business days after approval.',
+    courtRecordsCarveOut: 'Michigan courts are excluded from MI FOIA under MCL 15.232(h)(iv); court case records are governed by MCR 8.119 rather than MI FOIA.',
+  },
 };
 
 // 2026–2030 US Federal & Colorado State Holidays (YYYY-MM-DD)
