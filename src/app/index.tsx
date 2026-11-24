@@ -231,6 +231,9 @@ export default function IndexScreen() {
             itemId={route.itemId}
             onBack={goToDashboard}
             onUpdated={bumpRefresh}
+            onSelectSiblingItem={(siblingId) =>
+              setRoute({ name: 'detail', itemId: siblingId })
+            }
           />
         ) : null}
 

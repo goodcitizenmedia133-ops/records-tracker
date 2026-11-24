@@ -62,6 +62,9 @@ export default function App() {
               setRoute({ name: 'dashboard' });
             }}
             onUpdated={bumpRefresh}
+            onSelectSiblingItem={(siblingId) =>
+              setRoute({ name: 'detail', itemId: siblingId })
+            }
           />
         ) : null}
 

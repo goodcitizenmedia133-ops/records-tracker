@@ -241,12 +241,21 @@ export function RequestDetailScreen({
     onUpdated();
   };
 
+  const agencyLocationHint = {
+    jurisdiction: agency?.jurisdiction || null,
+    agencyName: agency?.name || item.agencyName,
+    stateCode: (agency as any)?.stateCode || null,
+    statuteCode,
+  };
+  const agencyTimeZone = resolveAgencyTimeZone(agencyLocationHint);
+  const agencyClockNow = getAgencyLocalDateInfo(new Date(), agencyTimeZone);
+
   const handleStatusChange = async (nextStatus: RecordStatus) => {
     const nowIso = new Date().toISOString();
-    const today = getTodayCalendarDate();
+    const filingClock = computeEffectiveFilingDate(nowIso, agencyLocationHint);
     const nextDue =
       nextStatus === 'sent' && !item.dueDate
-        ? addWorkingDays(today, statute.defaultWorkingDays)
+        ? addWorkingDays(filingClock.effectiveReceiptDateYmd, statute.defaultWorkingDays)
         : item.dueDate;
 
     const updated: PublicRecordItem = {
@@ -257,6 +266,10 @@ export function RequestDetailScreen({
     };
     const activeSender = (selectedSenderEmail || item.senderEmail || '').trim();
     const senderTag = activeSender ? ` via ${activeSender}` : '';
+    const clockNote =
+      nextStatus === 'sent'
+        ? ` [${filingClock.reason}]`
+        : ` [${filingClock.observedDateYmd} ${filingClock.zoneAbbr}]`;
     const updatedWithSender: PublicRecordItem = {
       ...updated,
       senderEmail: activeSender || updated.senderEmail || null,
@@ -266,13 +279,17 @@ export function RequestDetailScreen({
       `STATUS_${nextStatus.toUpperCase()}`,
       `Status updated to ${nextStatus.toUpperCase()}${senderTag}${
         nextDue ? ` (due ${nextDue})` : ''
-      }.`
+      }.${clockNote}`
     );
-    setFeedbackBanner(`Status updated to ${nextStatus.toUpperCase()}.`);
+    setFeedbackBanner(
+      nextStatus === 'sent' && filingClock.rolledNextBusinessDay
+        ? `Marked SENT · Receipt rolled to ${filingClock.effectiveReceiptDateYmd} (${filingClock.zoneAbbr} cutoff/weekend/holiday) · Due ${nextDue}.`
+        : `Status updated to ${nextStatus.toUpperCase()} (${filingClock.zoneAbbr}).`
+    );
   };
 
   const handleApplyExtension = async () => {
-    const baseDate = item.dueDate || getTodayCalendarDate();
+    const baseDate = item.dueDate || getTodayCalendarDate(agencyTimeZone);
     const extendedDue = addWorkingDays(
       baseDate,
       statute.maxExtensionWorkingDays
@@ -613,6 +630,9 @@ export function RequestDetailScreen({
 
       <View style={styles.statusRow}>
         <StatusBadge status={item.status} dueDate={item.dueDate} />
+        <Text style={styles.dueText}>
+          Agency Clock: {agencyClockNow.zoneAbbr} ({agencyTimeZone})
+        </Text>
         {selectedSenderEmail || item.senderEmail ? (
           <Text style={styles.dueText}>
             Sender: {selectedSenderEmail || item.senderEmail}
