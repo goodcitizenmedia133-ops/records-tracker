@@ -310,15 +310,16 @@ export function RequestDetailScreen({
   const handleStatusChange = async (nextStatus: RecordStatus) => {
     const nowIso = new Date().toISOString();
     const filingClock = computeEffectiveFilingDate(nowIso, agencyLocationHint);
+    const filingStartYmd = filingClock.observedDateYmd || getTodayCalendarDate(agencyTimeZone);
     const nextDue =
       nextStatus === 'sent' && !item.dueDate
-        ? addWorkingDays(getTodayCalendarDate(agencyTimeZone), statute.defaultWorkingDays)
+        ? addWorkingDays(filingStartYmd, statute.defaultWorkingDays)
         : item.dueDate;
 
     const updated: PublicRecordItem = {
       ...item,
       status: nextStatus,
-      sentAt: nextStatus === 'sent' && !item.sentAt ? nowIso : item.sentAt,
+      sentAt: nextStatus === 'sent' ? (item.status === 'sent' && item.sentAt ? item.sentAt : nowIso) : item.sentAt,
       dueDate: nextDue,
     };
     const activeSender = (selectedSenderEmail || item.senderEmail || '').trim();
