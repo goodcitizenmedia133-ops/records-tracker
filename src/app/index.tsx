@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Component, type ReactNode, useEffect, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -15,6 +15,104 @@ import { RequestDetailScreen } from '../screens/RequestDetailScreen';
 import { VaultScreen } from '../screens/VaultScreen';
 import { VaultUploadScreen } from '../screens/VaultUploadScreen';
 import { PublicRecordItem } from '../types/models';
+
+class ScreenErrorBoundary extends Component<
+  { children: ReactNode; onResetRoute: () => void },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: ReactNode; onResetRoute: () => void }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : 'Unexpected screen error.',
+    };
+  }
+
+  componentDidCatch(error: unknown) {
+    // Keep failure visible in console without crashing the full window
+    console.error('ScreenErrorBoundary caught error:', error);
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, message: '' });
+  };
+
+  handleGoHome = () => {
+    this.setState({ hasError: false, message: '' });
+    this.props.onResetRoute();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={boundaryStyles.box}>
+          <Text style={boundaryStyles.title}>Screen Recovered From Error</Text>
+          <Text style={boundaryStyles.body}>
+            Your saved requests and audit log remain in local storage. {this.state.message}
+          </Text>
+          <View style={boundaryStyles.row}>
+            <Pressable onPress={this.handleRetry} style={boundaryStyles.btnPrimary}>
+              <Text style={boundaryStyles.btnText}>Reload Screen</Text>
+            </Pressable>
+            <Pressable onPress={this.handleGoHome} style={boundaryStyles.btnSecondary}>
+              <Text style={boundaryStyles.btnText}>Back to Requests</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const boundaryStyles = StyleSheet.create({
+  box: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#1E1B18',
+    borderWidth: 1,
+    borderColor: '#D97706',
+    gap: 10,
+  },
+  title: {
+    color: '#FDE68A',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  body: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 4,
+  },
+  btnPrimary: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  btnSecondary: {
+    backgroundColor: '#374151',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  btnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+});
 
 type ActiveRoute =
   | { name: 'dashboard' }
@@ -226,6 +324,7 @@ export default function IndexScreen() {
           />
         ) : null}
 
+        <ScreenErrorBoundary onResetRoute={goToDashboard}>
         {route.name === 'detail' ? (
           <RequestDetailScreen
             itemId={route.itemId}
@@ -252,6 +351,7 @@ export default function IndexScreen() {
             }}
           />
         ) : null}
+        </ScreenErrorBoundary>
       </View>
 
       <Text style={styles.disclaimer}>
