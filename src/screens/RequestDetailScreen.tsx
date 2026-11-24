@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState , useMemo} from 'react';
 import {
     Alert,
     Pressable,

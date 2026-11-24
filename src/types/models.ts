@@ -53,6 +53,8 @@ export interface PublicRecordItem {
   batchLabel: string | null;
   sentEmailProof?: EmailProofRecord | null;
   responseEmailProof?: EmailProofRecord | null;
+  senderEmail?: string | null;
+  senderLabel?: string | null;
 }
 export interface AuditEntry {
   id: string;
