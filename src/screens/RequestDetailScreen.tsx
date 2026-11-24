@@ -359,10 +359,14 @@ export function RequestDetailScreen({
         nextDue ? ` (due ${nextDue})` : ''
       }.${clockNote}`
     );
+    const dueSuffix = nextDue ? ` · Due ${nextDue}` : '';
+    const senderSuffix = nextStatus === 'sent' && activeSender ? ` via ${activeSender}` : '';
     setFeedbackBanner(
       nextStatus === 'sent' && filingClock.rolledNextBusinessDay
-        ? `Marked SENT · Receipt rolled to ${getTodayCalendarDate(agencyTimeZone)} (${filingClock.zoneAbbr} cutoff/weekend/holiday) · Due ${nextDue}.`
-        : `Status updated to ${nextStatus.toUpperCase()} (${filingClock.zoneAbbr}).`
+        ? `Marked SENT${senderSuffix} · Receipt rolled to ${filingClock.observedDateYmd || getTodayCalendarDate(agencyTimeZone)} (${filingClock.zoneAbbr} cutoff/weekend/holiday)${dueSuffix}.`
+        : nextStatus === 'sent'
+          ? `Marked SENT${senderSuffix} (${filingClock.zoneAbbr})${dueSuffix}.`
+          : `Status updated to ${nextStatus.toUpperCase()} (${filingClock.zoneAbbr}).`
     );
   };
 
