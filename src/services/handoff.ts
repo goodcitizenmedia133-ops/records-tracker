@@ -584,8 +584,7 @@ export async function scheduleDeadlineReminder(item: PublicRecordItem): Promise<
         `DESCRIPTION:Agency: ${item.agencyName.replace(/[,;]/g, ' ')} (Ref: ${item.id})`,
         'END:VEVENT',
         'END:VCALENDAR',
-      ].join('
-');
+      ].join('\r\n');
       const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
       const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
