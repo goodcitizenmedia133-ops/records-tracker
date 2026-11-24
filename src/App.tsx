@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, Component, type ReactNode } from 'react';
 import {
     Pressable,
     SafeAreaView,
@@ -7,7 +7,6 @@ import {
     Text,
     View,
 } from 'react-native';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { NewRequestScreen } from './screens/NewRequestScreen';
 import { RequestDetailScreen } from './screens/RequestDetailScreen';

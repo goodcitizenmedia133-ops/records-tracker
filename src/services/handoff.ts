@@ -637,6 +637,7 @@ export async function launchDefaultMailtoHandoff(
 }
 
 export function getProviderWebmailInfo(senderEmail?: string | null): {
+  id: 'comcast' | 'outlook' | 'yahoo' | 'gmail' | 'other';
   providerName: string;
   composeUrl: string | null;
 } {
@@ -645,30 +646,35 @@ export function getProviderWebmailInfo(senderEmail?: string | null): {
 
   if (domain === 'comcast.net' || domain === 'xfinity.com') {
     return {
+      id: 'comcast',
       providerName: 'Comcast / Xfinity Webmail',
       composeUrl: 'https://connect.xfinity.com/appsuite/',
     };
   }
   if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com') {
     return {
+      id: 'outlook',
       providerName: 'Outlook Web',
       composeUrl: 'https://outlook.live.com/mail/0/deeplink/compose',
     };
   }
   if (domain === 'yahoo.com' || domain === 'ymail.com') {
     return {
+      id: 'yahoo',
       providerName: 'Yahoo Mail',
       composeUrl: 'https://mail.yahoo.com/',
     };
   }
   if (domain === 'gmail.com' || domain === 'googlemail.com') {
     return {
+      id: 'gmail',
       providerName: 'Gmail Web',
       composeUrl: null,
     };
   }
   return {
-    providerName: domain ? `${domain} Webmail` : 'Gmail Web',
+    id: 'other',
+    providerName: domain ? `${domain} Webmail` : 'Email Client',
     composeUrl: null,
   };
 }
@@ -678,33 +684,43 @@ export async function launchProviderWebmailHandoff(
   agency: AgencyRecord | null,
   options?: RequestLetterOptions & { senderEmail?: string | null }
 ): Promise<HandoffResult> {
-  const senderEmail = (options?.senderEmail || item.senderEmail || '').trim();
-  const provider = getProviderWebmailInfo(senderEmail);
+  const sender = (options?.senderEmail || item.senderEmail || '').trim();
+  const provider = getProviderWebmailInfo(sender);
+  const isGmail = /@(gmail|googlemail)\.com$/i.test(sender) || provider.id === 'gmail';
 
-  if (!provider.composeUrl) {
-    const res = await launchGmailWebHandoffWithStatute(item, agency, options);
-    return res;
+  if (isGmail) {
+    return launchGmailWebHandoffWithStatute(item, agency, options);
   }
 
   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
-  let targetUrl = provider.composeUrl;
-  if (provider.composeUrl.includes('outlook.live.com')) {
-    const params = new URLSearchParams();
-    if (bundle.to) params.set('to', bundle.to);
-    if (bundle.subject) params.set('subject', bundle.subject);
-    if (bundle.body) params.set('body', bundle.body);
-    targetUrl = `${provider.composeUrl}?${params.toString()}`;
+  if (provider.composeUrl) {
+    try {
+      const ok = await openExternalUrl(provider.composeUrl);
+      if (ok) {
+        return {
+          ok: true,
+          message: `Opened ${provider.providerName}. Confirm you are sending from ${sender || 'your selected account'} before hitting Send.`,
+        };
+      }
+    } catch {
+      // fall through to mailto / clipboard guidance
+    }
   }
 
-  const opened = await openExternalUrl(targetUrl);
-  if (opened) {
-    return {
-      ok: true,
-      message: `Opened ${provider.providerName}${senderEmail ? ` for ${senderEmail}` : ''}. Use Copy Email Packet to paste To, Subject & Body.`,
-    };
+  try {
+    const mailtoOk = await openExternalUrl(bundle.mailtoUrl);
+    if (mailtoOk) {
+      return {
+        ok: true,
+        message: `Opened mail client for ${sender || provider.providerName}. Verify the From address is ${sender || 'your chosen account'} before sending.`,
+      };
+    }
+  } catch {
+    // fall through
   }
+
   return {
     ok: false,
-    message: `Browser blocked the ${provider.providerName} popup—allow popups or use Download Draft (.eml) / Copy Email Packet.`,
+    message: `Could not open ${provider.providerName} automatically for ${sender || 'your selected sender'}. Use Copy Email Packet or Download Draft (.eml) and paste into your ${provider.providerName} account.`,
   };
 }

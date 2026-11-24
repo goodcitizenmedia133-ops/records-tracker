@@ -116,6 +116,7 @@ export function RequestDetailScreen({
   });
   const [selectedSenderEmail, setSelectedSenderEmail] = useState('');
   const [pendingSwitchSender, setPendingSwitchSender] = useState<string | null>(null);
+  const [pendingSendConfirmation, setPendingSendConfirmation] = useState(false);
   const [copiedPacketFeedback, setCopiedPacketFeedback] = useState(false);
   const [copiedHeaderFeedback, setCopiedHeaderFeedback] = useState(false);
   const [newSenderLabel, setNewSenderLabel] = useState('');
@@ -279,6 +280,24 @@ export function RequestDetailScreen({
       dueDate: nextDue,
     };
     const activeSender = (selectedSenderEmail || item.senderEmail || '').trim();
+    const boundSender = (item.senderEmail || '').trim();
+    if (nextStatus === 'sent' && !activeSender) {
+      setFeedbackBanner('Select or add a sender account (such as Comcast or Gmail) before marking this request SENT.');
+      return;
+    }
+    if (
+      nextStatus === 'sent' &&
+      boundSender &&
+      activeSender.toLowerCase() !== boundSender.toLowerCase() &&
+      !pendingSendConfirmation
+    ) {
+      setPendingSendConfirmation(true);
+      setFeedbackBanner(
+        `This request is bound to ${boundSender}, but ${activeSender} is active. Tap Mark Sent again to confirm sending from ${activeSender}.`
+      );
+      return;
+    }
+    setPendingSendConfirmation(false);
     const senderTag = activeSender ? ` via ${activeSender}` : '';
     const clockNote =
       nextStatus === 'sent'
@@ -287,6 +306,7 @@ export function RequestDetailScreen({
     const updatedWithSender: PublicRecordItem = {
       ...updated,
       senderEmail: activeSender || updated.senderEmail || null,
+      senderLabel: activeSender ? (senderAccounts.find((a) => a.email.toLowerCase() === activeSender.toLowerCase())?.label || updated.senderLabel || null) : (updated.senderLabel || null),
     };
     await recordChange(
       updatedWithSender,
@@ -533,12 +553,13 @@ export function RequestDetailScreen({
     setFeedbackBanner(`Bound request to sender account: ${cleanLabel} (${cleanEmail})`);
   };
 
-  const handleEmail = async () => {
-    const res = await launchProviderWebmailHandoff(item, agency, {
+    const handleEmail = async () => {
+    const activeSender = (selectedSenderEmail || item?.senderEmail || '').trim();
+    const res = await launchProviderWebmailHandoff(item!, agency, {
       requesterSignOff: effectiveSignOff,
       preferredFormat: preferredFormatInput,
       toneStyle: emailTone,
-      senderEmail: selectedSenderEmail || item.senderEmail || '',
+      senderEmail: activeSender,
     });
     setFeedbackBanner(res.message);
   };
@@ -688,7 +709,8 @@ export function RequestDetailScreen({
         <View style={styles.actionGrid}>
           <Pressable onPress={handleEmail} style={[styles.actionBtn, styles.primaryActionBtn]}>
             <Text style={styles.primaryActionBtnText}>
-              Open {getProviderWebmailInfo(selectedSenderEmail || item.senderEmail).providerName}
+              Launch {getProviderWebmailInfo(selectedSenderEmail || item.senderEmail).providerName}
+              {(selectedSenderEmail || item.senderEmail) ? ` (${selectedSenderEmail || item.senderEmail})` : ''}
             </Text>
           </Pressable>
           <Pressable onPress={handleCopyText} style={styles.actionBtn}>
