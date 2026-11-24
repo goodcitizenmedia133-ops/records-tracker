@@ -28,6 +28,7 @@ import {
 import {
     buildItemEmailHandoff,
     downloadEmailDraftEml,
+    launchDefaultMailtoHandoff,
     EmailToneStyle,
     getAvailableEmailTones,
     getEmailDraftInsights,
@@ -90,6 +91,23 @@ export function RequestDetailScreen({
   const [feeInput, setFeeInput] = useState('');
   const [noteCategory, setNoteCategory] = useState<'Call' | 'Email Reply' | 'Delivery' | 'Note'>('Call');
   const [noteDateInput, setNoteDateInput] = useState('');
+  const [senderAccounts, setSenderAccounts] = useState<{ label: string; email: string }[]>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = window.localStorage.getItem('gcm_sender_accounts_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+    } catch {
+      // ignore storage read errors
+    }
+    return [];
+  });
+  const [selectedSenderEmail, setSelectedSenderEmail] = useState('');
+  const [newSenderLabel, setNewSenderLabel] = useState('');
+  const [newSenderEmail, setNewSenderEmail] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [rawEmailInput, setRawEmailInput] = useState('');
   const [scrubEmailPii, setScrubEmailPii] = useState(true);
@@ -377,8 +395,15 @@ export function RequestDetailScreen({
     toneStyle: emailTone,
   });
 
+  const effectiveSignOff = useMemo(() => {
+    const base = signOffInput.trim();
+    if (!selectedSenderEmail) return base;
+    if (base.toLowerCase().includes(selectedSenderEmail.toLowerCase())) return base;
+    return base ? `${base} (${selectedSenderEmail})` : selectedSenderEmail;
+  }, [signOffInput, selectedSenderEmail]);
+
   const emailBundle = buildItemEmailHandoff(item, agency, {
-    requesterSignOff: signOffInput,
+    requesterSignOff: effectiveSignOff,
     preferredFormat: preferredFormatInput,
     toneStyle: emailTone,
   });
@@ -390,11 +415,45 @@ export function RequestDetailScreen({
 
   const handleDownloadEml = async () => {
     const res = await downloadEmailDraftEml(item, agency, {
-      requesterSignOff: signOffInput,
+      requesterSignOff: effectiveSignOff,
       preferredFormat: preferredFormatInput,
       toneStyle: emailTone,
     });
     setFeedbackBanner(res.message);
+  };
+
+  const handleOpenDefaultMail = async () => {
+    const res = await launchDefaultMailtoHandoff(item, agency, {
+      requesterSignOff: effectiveSignOff,
+      preferredFormat: preferredFormatInput,
+      toneStyle: emailTone,
+    });
+    setFeedbackBanner(res.message);
+  };
+
+  const handleAddSenderAccount = () => {
+    const cleanEmail = newSenderEmail.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setFeedbackBanner('Enter a valid sender email (e.g. name@comcast.net or name@gmail.com).');
+      return;
+    }
+    const cleanLabel = newSenderLabel.trim() || cleanEmail.split('@')[1] || 'Account';
+    const next = [
+      ...senderAccounts.filter((a) => a.email.toLowerCase() !== cleanEmail.toLowerCase()),
+      { label: cleanLabel, email: cleanEmail },
+    ];
+    setSenderAccounts(next);
+    setSelectedSenderEmail(cleanEmail);
+    setNewSenderLabel('');
+    setNewSenderEmail('');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('gcm_sender_accounts_v1', JSON.stringify(next));
+      }
+    } catch {
+      // ignore storage errors
+    }
+    setFeedbackBanner(`Saved sender account: ${cleanEmail}`);
   };
 
   const handleEmail = async () => {
@@ -535,6 +594,9 @@ export function RequestDetailScreen({
               <Text style={styles.actionBtnText}>Copy To &amp; Subject</Text>
             </Pressable>
           )}
+          <Pressable onPress={handleOpenDefaultMail} style={styles.actionBtn}>
+            <Text style={styles.actionBtnText}>Open Default Mail</Text>
+          </Pressable>
           <Pressable onPress={handleDownloadEml} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Download Draft (.eml)</Text>
           </Pressable>
@@ -573,6 +635,49 @@ export function RequestDetailScreen({
             ? ` | ${statuteCode} Sections: ${draftInsights.referencedCitations.join(', ')}`
             : ''}
         </Text>
+
+        <Text style={styles.subLabel}>Sending From Account (Multi-Provider / Multi-Email)</Text>
+        <View style={styles.statusGrid}>
+          {senderAccounts.map((acc) => {
+            const active = selectedSenderEmail.toLowerCase() === acc.email.toLowerCase();
+            return (
+              <Pressable
+                key={acc.email}
+                onPress={() => {
+                  const nextVal = active ? '' : acc.email;
+                  setSelectedSenderEmail(nextVal);
+                  setFeedbackBanner(nextVal ? `Active sender: ${nextVal}` : 'Cleared active sender account.');
+                }}
+                style={[styles.chipBtn, active && styles.chipBtnActive]}
+              >
+                <Text style={[styles.chipBtnText, active && styles.chipBtnTextActive]}>
+                  {acc.label}: {acc.email}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.inlineRow}>
+          <TextInput
+            value={newSenderLabel}
+            onChangeText={setNewSenderLabel}
+            placeholder="Label (e.g. Comcast)"
+            placeholderTextColor="#9CA3AF"
+            style={[styles.input, { width: 135 }]}
+          />
+          <TextInput
+            value={newSenderEmail}
+            onChangeText={setNewSenderEmail}
+            placeholder="you@comcast.net"
+            placeholderTextColor="#9CA3AF"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            style={[styles.input, { flex: 1 }]}
+          />
+          <Pressable onPress={handleAddSenderAccount} style={styles.inlineSaveBtn}>
+            <Text style={styles.inlineSaveText}>Save</Text>
+          </Pressable>
+        </View>
 
         <Text style={styles.subLabel}>Requester Sign-Off (optional)</Text>
         <TextInput

@@ -604,3 +604,34 @@ export async function scheduleDeadlineReminder(item: PublicRecordItem): Promise<
   }
   return { ok: true, message: `9:00 AM statutory deadline reminder noted for ${item.dueDate}.` };
 }
+
+export async function launchDefaultMailtoHandoff(
+  item: PublicRecordItem,
+  agency: AgencyRecord | null,
+  options?: RequestLetterOptions
+): Promise<HandoffResult> {
+  const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+  const encodedSubject = encodeURIComponent(bundle.subject);
+  const encodedBody = encodeURIComponent(bundle.body);
+  const toPart = encodeURIComponent(bundle.to || '');
+  const mailtoUrl = `mailto:${toPart}?subject=${encodedSubject}&body=${encodedBody}`;
+
+  try {
+    const opened = await openExternalUrl(mailtoUrl);
+    if (opened) {
+      return {
+        ok: true,
+        message: 'Opened your default mail app/handler. If Edge prompts or does not open, use Download Draft (.eml) or Copy Email Packet.',
+      };
+    }
+    return {
+      ok: false,
+      message: 'Could not launch default mail handler in Edge. Use Download Draft (.eml) or Copy Email Packet.',
+    };
+  } catch {
+    return {
+      ok: false,
+      message: 'Default mail handler blocked or unavailable. Use Download Draft (.eml) or Copy Email Packet.',
+    };
+  }
+}
