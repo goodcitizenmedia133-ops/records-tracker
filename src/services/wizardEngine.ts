@@ -262,6 +262,8 @@ export function buildSplitChildItems(
         .join(' '),
       parentItemId: parentItem.id,
       batchLabel: parentItem.batchLabel ?? parentItem.title,
+      senderEmail: parentItem.senderEmail ?? null,
+      senderLabel: parentItem.senderLabel ?? null,
     };
   });
 }

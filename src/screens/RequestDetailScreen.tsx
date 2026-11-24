@@ -28,7 +28,9 @@ import {
 import {
     buildItemEmailHandoff,
     downloadEmailDraftEml,
+    getProviderWebmailInfo,
     launchDefaultMailtoHandoff,
+    launchProviderWebmailHandoff,
     EmailToneStyle,
     getAvailableEmailTones,
     getEmailDraftInsights,
@@ -106,6 +108,7 @@ export function RequestDetailScreen({
     return [];
   });
   const [selectedSenderEmail, setSelectedSenderEmail] = useState('');
+  const [pendingSwitchSender, setPendingSwitchSender] = useState<string | null>(null);
   const [newSenderLabel, setNewSenderLabel] = useState('');
   const [newSenderEmail, setNewSenderEmail] = useState('');
   const [noteInput, setNoteInput] = useState('');
@@ -165,6 +168,9 @@ export function RequestDetailScreen({
       setAgency(agencies.find((a) => a.id === found.agencyId) ?? null);
       const log = await getAuditEntries(found.id);
       setAudits(log);
+      if (found.senderEmail) {
+        setSelectedSenderEmail(found.senderEmail);
+      }
       if (found.batchLabel || found.parentItemId) {
         const all = await getAllItems();
         const siblings = all.filter(
@@ -247,10 +253,16 @@ export function RequestDetailScreen({
       sentAt: nextStatus === 'sent' && !item.sentAt ? nowIso : item.sentAt,
       dueDate: nextDue,
     };
+    const activeSender = (selectedSenderEmail || item.senderEmail || '').trim();
+    const senderTag = activeSender ? ` via ${activeSender}` : '';
+    const updatedWithSender: PublicRecordItem = {
+      ...updated,
+      senderEmail: activeSender || updated.senderEmail || null,
+    };
     await recordChange(
-      updated,
+      updatedWithSender,
       `STATUS_${nextStatus.toUpperCase()}`,
-      `Status updated to ${nextStatus.toUpperCase()}${
+      `Status updated to ${nextStatus.toUpperCase()}${senderTag}${
         nextDue ? ` (due ${nextDue})` : ''
       }.`
     );
@@ -443,7 +455,7 @@ export function RequestDetailScreen({
       { label: cleanLabel, email: cleanEmail },
     ];
     setSenderAccounts(next);
-    setSelectedSenderEmail(cleanEmail);
+    void persistRequestSender(cleanEmail, cleanLabel);
     setNewSenderLabel('');
     setNewSenderEmail('');
     try {
@@ -453,16 +465,31 @@ export function RequestDetailScreen({
     } catch {
       // ignore storage errors
     }
-    setFeedbackBanner(`Saved sender account: ${cleanEmail}`);
+    setFeedbackBanner(`Bound request to sender account: ${cleanLabel} (${cleanEmail})`);
   };
 
   const handleEmail = async () => {
-    const res = await launchGmailWebHandoffWithStatute(item, agency, {
-      requesterSignOff: signOffInput,
+    const res = await launchProviderWebmailHandoff(item, agency, {
+      requesterSignOff: effectiveSignOff,
       preferredFormat: preferredFormatInput,
       toneStyle: emailTone,
+      senderEmail: selectedSenderEmail || item.senderEmail || '',
     });
     setFeedbackBanner(res.message);
+  };
+
+  const persistRequestSender = async (emailVal: string, labelVal?: string) => {
+    setSelectedSenderEmail(emailVal);
+    setPendingSwitchSender(null);
+    if (!item) return;
+    const updated: PublicRecordItem = {
+      ...item,
+      senderEmail: emailVal || null,
+      senderLabel: labelVal || null,
+    };
+    await upsertItem(updated);
+    setItem(updated);
+    onUpdated();
   };
 
   const handlePortal = async () => {
@@ -538,6 +565,11 @@ export function RequestDetailScreen({
 
       <View style={styles.statusRow}>
         <StatusBadge status={item.status} dueDate={item.dueDate} />
+        {selectedSenderEmail || item.senderEmail ? (
+          <Text style={styles.dueText}>
+            Sender: {selectedSenderEmail || item.senderEmail}
+          </Text>
+        ) : null}
         {item.dueDate ? (
           <Text style={styles.dueText}>Target: {item.dueDate}</Text>
         ) : null}
@@ -580,7 +612,9 @@ export function RequestDetailScreen({
         <Text style={styles.sectionTitle}>Send &amp; Handoff Actions</Text>
         <View style={styles.actionGrid}>
           <Pressable onPress={handleEmail} style={[styles.actionBtn, styles.primaryActionBtn]}>
-            <Text style={styles.primaryActionBtnText}>Open Gmail Web</Text>
+            <Text style={styles.primaryActionBtnText}>
+              Open {getProviderWebmailInfo(selectedSenderEmail || item.senderEmail).providerName}
+            </Text>
           </Pressable>
           <Pressable onPress={handleCopyText} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Copy Email Packet</Text>
@@ -636,22 +670,40 @@ export function RequestDetailScreen({
             : ''}
         </Text>
 
-        <Text style={styles.subLabel}>Sending From Account (Multi-Provider / Multi-Email)</Text>
+        <Text style={styles.subLabel}>
+          Sending From Account (Locked to Request Thread)
+        </Text>
         <View style={styles.statusGrid}>
           {senderAccounts.map((acc) => {
             const active = selectedSenderEmail.toLowerCase() === acc.email.toLowerCase();
+            const isLockedSent = item.status !== 'draft' && Boolean(selectedSenderEmail) && !active;
             return (
               <Pressable
                 key={acc.email}
                 onPress={() => {
-                  const nextVal = active ? '' : acc.email;
-                  setSelectedSenderEmail(nextVal);
-                  setFeedbackBanner(nextVal ? `Active sender: ${nextVal}` : 'Cleared active sender account.');
+                  if (active) {
+                    if (item.status !== 'draft') {
+                      setFeedbackBanner(`Thread is locked to ${acc.email} because this request is already ${item.status.toUpperCase()}.`);
+                      return;
+                    }
+                    void persistRequestSender('', '');
+                    setFeedbackBanner('Cleared sender account on draft.');
+                    return;
+                  }
+                  if (isLockedSent && pendingSwitchSender !== acc.email) {
+                    setPendingSwitchSender(acc.email);
+                    setFeedbackBanner(
+                      `Warning: This thread was started with ${selectedSenderEmail}. Tap ${acc.email} again only if you intentionally want to switch accounts.`
+                    );
+                    return;
+                  }
+                  void persistRequestSender(acc.email, acc.label);
+                  setFeedbackBanner(`Request bound to sender: ${acc.label} (${acc.email})`);
                 }}
                 style={[styles.chipBtn, active && styles.chipBtnActive]}
               >
                 <Text style={[styles.chipBtnText, active && styles.chipBtnTextActive]}>
-                  {acc.label}: {acc.email}
+                  {active ? 'LOCKED · ' : ''}{acc.label}: {acc.email}
                 </Text>
               </Pressable>
             );

@@ -635,3 +635,75 @@ export async function launchDefaultMailtoHandoff(
     };
   }
 }
+
+export function getProviderWebmailInfo(senderEmail?: string | null): {
+  providerName: string;
+  composeUrl: string | null;
+} {
+  const email = (senderEmail || '').trim().toLowerCase();
+  const domain = email.includes('@') ? email.split('@')[1] : '';
+
+  if (domain === 'comcast.net' || domain === 'xfinity.com') {
+    return {
+      providerName: 'Comcast / Xfinity Webmail',
+      composeUrl: 'https://connect.xfinity.com/appsuite/',
+    };
+  }
+  if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com') {
+    return {
+      providerName: 'Outlook Web',
+      composeUrl: 'https://outlook.live.com/mail/0/deeplink/compose',
+    };
+  }
+  if (domain === 'yahoo.com' || domain === 'ymail.com') {
+    return {
+      providerName: 'Yahoo Mail',
+      composeUrl: 'https://mail.yahoo.com/',
+    };
+  }
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    return {
+      providerName: 'Gmail Web',
+      composeUrl: null,
+    };
+  }
+  return {
+    providerName: domain ? `${domain} Webmail` : 'Gmail Web',
+    composeUrl: null,
+  };
+}
+
+export async function launchProviderWebmailHandoff(
+  item: PublicRecordItem,
+  agency: AgencyRecord | null,
+  options?: RequestLetterOptions & { senderEmail?: string | null }
+): Promise<HandoffResult> {
+  const senderEmail = (options?.senderEmail || item.senderEmail || '').trim();
+  const provider = getProviderWebmailInfo(senderEmail);
+
+  if (!provider.composeUrl) {
+    return launchGmailWebHandoffWithStatute(item, agency, options);
+  }
+
+  const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+  let targetUrl = provider.composeUrl;
+  if (provider.composeUrl.includes('outlook.live.com')) {
+    const params = new URLSearchParams();
+    if (bundle.to) params.set('to', bundle.to);
+    if (bundle.subject) params.set('subject', bundle.subject);
+    if (bundle.body) params.set('body', bundle.body);
+    targetUrl = `${provider.composeUrl}?${params.toString()}`;
+  }
+
+  const opened = await openExternalUrl(targetUrl);
+  if (opened) {
+    return {
+      ok: true,
+      message: `Opened ${provider.providerName}${senderEmail ? ` for ${senderEmail}` : ''}. Use Copy Email Packet to paste To, Subject & Body.`,
+    };
+  }
+  return {
+    ok: false,
+    message: `Browser blocked the ${provider.providerName} popup—allow popups or use Download Draft (.eml) / Copy Email Packet.`,
+  };
+}
