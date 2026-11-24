@@ -227,25 +227,43 @@ export function buildSplitChildItems(
   parentItem: PublicRecordItem,
   splitTitles: string[]
 ): PublicRecordItem[] {
-  return splitTitles
-    .map((rawTitle, idx) => rawTitle.trim())
-    .filter(Boolean)
-    .map((title, idx) => ({
+  const cleanTitles = splitTitles.map((t) => t.trim()).filter(Boolean);
+  const parentSummary = (parentItem.summary || '').trim();
+  const isCcjra = parentItem.statuteCode.trim().toUpperCase() === 'CCJRA';
+
+  return cleanTitles.map((rawTitle, idx) => {
+    const cleanSlice = rawTitle.replace(/^Focused sub-request:\s*/i, '').trim();
+    const standaloneTitle = cleanSlice || rawTitle;
+    const scopeParts = [
+      `Standalone public records request specifically for: ${standaloneTitle}.`,
+      parentSummary ? `Context & date/record parameters: ${parentSummary}` : '',
+      isCcjra && !parentSummary.includes('24-72-305.5')
+        ? STATUTORY_CLAUSES.ccjraNonPecuniaryAffirmation
+        : '',
+    ].filter(Boolean);
+
+    return {
       id: `${parentItem.id}-split-${idx + 1}`,
-      title,
+      title: standaloneTitle,
       agencyId: parentItem.agencyId,
       agencyName: parentItem.agencyName,
       statuteCode: parentItem.statuteCode,
-      summary: `${parentItem.summary} (Split part ${idx + 1} of ${splitTitles.length})`,
+      summary: scopeParts.join(' '),
       status: 'draft',
       createdAt: new Date().toISOString(),
       sentAt: null,
       dueDate: parentItem.dueDate,
       feeQuoted: null,
-      notes: parentItem.notes,
+      notes: [
+        parentItem.notes,
+        `Independent split request ${idx + 1} of ${cleanTitles.length} (Batch: ${parentItem.batchLabel ?? parentItem.title}).`,
+      ]
+        .filter(Boolean)
+        .join(' '),
       parentItemId: parentItem.id,
       batchLabel: parentItem.batchLabel ?? parentItem.title,
-    }));
+    };
+  });
 }
 export interface VaultWorkflowStep {
   stepNumber: number;

@@ -20,12 +20,14 @@ import {
 import {
     addAuditEntry,
     getAllAgencies,
+    getAllItems,
     getAuditEntries,
     getItemById,
     upsertItem,
 } from '../services/database';
 import {
     buildItemEmailHandoff,
+    downloadEmailDraftEml,
     EmailToneStyle,
     getAvailableEmailTones,
     getEmailDraftInsights,
@@ -52,6 +54,7 @@ interface RequestDetailScreenProps {
   itemId: string;
   onBack: () => void;
   onUpdated: () => void;
+  onSelectSiblingItem?: (siblingId: string) => void;
 }
 
 const STATUS_ACTIONS: { label: string; status: RecordStatus }[] = [
@@ -65,8 +68,10 @@ export function RequestDetailScreen({
   itemId,
   onBack,
   onUpdated,
+  onSelectSiblingItem,
 }: RequestDetailScreenProps) {
   const [item, setItem] = useState<PublicRecordItem | null>(null);
+  const [siblingItems, setSiblingItems] = useState<PublicRecordItem[]>([]);
   const [agency, setAgency] = useState<AgencyRecord | null>(null);
   const [audits, setAudits] = useState<AuditEntry[]>([]);
   const [auditSortOrder, setAuditSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -142,6 +147,18 @@ export function RequestDetailScreen({
       setAgency(agencies.find((a) => a.id === found.agencyId) ?? null);
       const log = await getAuditEntries(found.id);
       setAudits(log);
+      if (found.batchLabel || found.parentItemId) {
+        const all = await getAllItems();
+        const siblings = all.filter(
+          (other) =>
+            other.id !== found.id &&
+            ((found.batchLabel && other.batchLabel === found.batchLabel) ||
+              (found.parentItemId && other.parentItemId === found.parentItemId))
+        );
+        setSiblingItems(siblings);
+      } else {
+        setSiblingItems([]);
+      }
     }
   }, [itemId]);
 
@@ -371,6 +388,15 @@ export function RequestDetailScreen({
     setFeedbackBanner('Formatted request email & metadata copied to clipboard.');
   };
 
+  const handleDownloadEml = async () => {
+    const res = await downloadEmailDraftEml(item, agency, {
+      requesterSignOff: signOffInput,
+      preferredFormat: preferredFormatInput,
+      toneStyle: emailTone,
+    });
+    setFeedbackBanner(res.message);
+  };
+
   const handleEmail = async () => {
     const res = await launchGmailWebHandoffWithStatute(item, agency, {
       requesterSignOff: signOffInput,
@@ -458,6 +484,32 @@ export function RequestDetailScreen({
         ) : null}
       </View>
 
+      {item.batchLabel ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Split Request Batch: {item.batchLabel}</Text>
+          <Text style={styles.mutedText}>
+            Tracked as an independent request so each email thread, clock, and reply stays separate.
+          </Text>
+          {siblingItems.map((sib) => (
+            <Pressable
+              key={sib.id}
+              onPress={() => {
+                if (onSelectSiblingItem) {
+                  onSelectSiblingItem(sib.id);
+                } else {
+                  setFeedbackBanner(`Related split draft: "${sib.title}" (${sib.status.toUpperCase()}). Open it from Dashboard.`);
+                }
+              }}
+              style={styles.actionBtn}
+            >
+              <Text style={styles.actionBtnText}>
+                Sibling: {sib.title} ({sib.status.toUpperCase()})
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Request Scope</Text>
         <Text style={styles.bodyText}>
@@ -483,6 +535,9 @@ export function RequestDetailScreen({
               <Text style={styles.actionBtnText}>Copy To &amp; Subject</Text>
             </Pressable>
           )}
+          <Pressable onPress={handleDownloadEml} style={styles.actionBtn}>
+            <Text style={styles.actionBtnText}>Download Draft (.eml)</Text>
+          </Pressable>
           <Pressable onPress={handleReminder} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Set 9 AM Alert</Text>
           </Pressable>

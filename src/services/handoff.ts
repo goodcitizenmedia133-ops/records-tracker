@@ -348,7 +348,7 @@ export async function launchGmailWebHandoffWithStatute(
     if (!ok) {
       return {
         ok: false,
-        message: 'Could not open Gmail Web automatically. Use Copy Full Packet to paste into any webmail tab.',
+        message: 'Browser blocked the Gmail popup tab—allow popups for this site or use Download Draft (.eml) / Copy Email Packet.',
       };
     }
     return {
@@ -435,12 +435,61 @@ export function buildItemEmailHandoff(
 async function openExternalUrl(url: string): Promise<boolean> {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (opened) return true;
+    return Boolean(opened);
   }
   const supported = await Linking.canOpenURL(url).catch(() => true);
-  if (!supported && Platform.OS !== 'web') return false;
+  if (!supported) return false;
   await Linking.openURL(url);
   return true;
+}
+
+export function buildEmlDraftContent(bundle: AnyEmailHandoffBundle): string {
+  const safeSubject = bundle.subject.replace(/[\r\n]+/g, ' ').trim();
+  const safeTo = bundle.to.replace(/[\r\n]+/g, ' ').trim();
+  return [
+    safeTo ? `To: ${safeTo}` : 'To: ',
+    `Subject: ${safeSubject}`,
+    'X-Unsent: 1',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    '',
+    bundle.body,
+  ].join('\r\n');
+}
+
+export async function downloadEmailDraftEml(
+  item: PublicRecordItem,
+  agency: AgencyRecord | null,
+  options?: RequestLetterOptions
+): Promise<HandoffResult> {
+  const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
+  const eml = buildEmlDraftContent(bundle);
+  if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    try {
+      const blob = new Blob([eml], { type: 'message/rfc822;charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${item.id}-draft.eml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+      return {
+        ok: true,
+        message: 'Downloaded .eml draft—double-click it to open directly in Outlook, Thunderbird, or Apple Mail.',
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'Could not download .eml draft. Use Copy Email Packet instead.',
+      };
+    }
+  }
+  return {
+    ok: false,
+    message: 'Direct .eml file download is for desktop/web browsers; use Open Gmail Web or Copy Email Packet.',
+  };
 }
 
 export async function launchGmailWebHandoff(

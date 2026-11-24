@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { STATUTES, StatuteCode } from '../data/statutes';
@@ -173,8 +174,53 @@ export async function exportAndSharePacketPdf(
   agency?: AgencyRecord | null,
   options?: PacketBuildOptions
 ): Promise<PacketBuildResult> {
+  const html = buildPacketHtml(item, audits, agency, options);
+
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+    try {
+      const printWin = window.open('', '_blank', 'noopener,noreferrer');
+      if (printWin && printWin.document) {
+        printWin.document.open();
+        printWin.document.write(
+          html.replace(
+            '</body>',
+            '<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body>'
+          )
+        );
+        printWin.document.close();
+        return {
+          ok: true,
+          message: 'Opened printable compliance packet in a new tab (choose Save as PDF in the print dialog).',
+        };
+      }
+    } catch {
+      // Fall through to direct file download if popup is blocked
+    }
+
+    try {
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${item.id}-compliance-packet.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+      return {
+        ok: true,
+        message: 'Downloaded compliance packet HTML (open in browser and Print -> Save as PDF).',
+        uri: blobUrl,
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'Could not open or download the compliance packet in this browser.',
+      };
+    }
+  }
+
   try {
-    const html = buildPacketHtml(item, audits, agency, options);
     const { uri } = await Print.printToFileAsync({ html });
 
     const canShare = await Sharing.isAvailableAsync();
@@ -199,7 +245,7 @@ export async function exportAndSharePacketPdf(
     return {
       ok: false,
       message:
-        'PDF file generation is not supported in this preview environment. Try running on iOS or Android.',
+        'PDF file generation failed on this device. Try again or use web Print -> Save as PDF.',
     };
   }
 }
