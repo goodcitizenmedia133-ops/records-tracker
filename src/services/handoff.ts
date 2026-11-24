@@ -324,17 +324,17 @@ export async function launchGmailWebHandoffWithStatute(
     if (!ok) {
       return {
         ok: false,
-        message: 'Browser blocked the Gmail popup tab—allow popups for this site or use Download Draft (.eml) / Copy Email Packet.',
+        message: 'Browser blocked the mail tab—allow popups for this site or use Download Draft (.eml) / Copy Email Packet.',
       };
     }
     return {
       ok: true,
-      message: 'Opened Gmail Web with a statute-aligned request draft ready for review and send.',
+      message: 'Opened webmail with a statute-aligned request draft ready for review and send.',
     };
   } catch {
     return {
       ok: false,
-      message: 'Gmail Web handoff failed. Use Copy Full Packet to paste into any email client.',
+      message: 'Webmail handoff failed. Use Copy Full Packet to paste into your email client.',
     };
   }
 }
@@ -474,7 +474,7 @@ export async function downloadEmailDraftEml(
   }
   return {
     ok: false,
-    message: 'Direct .eml file download is for desktop/web browsers; use Open Gmail Web or Copy Email Packet.',
+    message: 'Direct .eml file download is for desktop/web browsers; use Copy Email Packet.',
   };
 }
 
@@ -489,17 +489,17 @@ export async function launchGmailWebHandoff(
     if (!ok) {
       return {
         ok: false,
-        message: 'Could not open Gmail Web automatically. Use Copy Full Packet to paste into any webmail tab.',
+        message: 'Could not open webmail automatically. Use Copy Full Packet to paste into your email client.',
       };
     }
     return {
       ok: true,
-      message: 'Opened Gmail Web with a formatted request draft ready for review and send.',
+      message: 'Opened webmail with a formatted request draft ready for review and send.',
     };
   } catch {
     return {
       ok: false,
-      message: 'Gmail Web handoff failed. Use Copy Full Packet to paste into any email client.',
+      message: 'Webmail handoff failed. Use Copy Full Packet to paste into your email client.',
     };
   }
 }

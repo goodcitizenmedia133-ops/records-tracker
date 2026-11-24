@@ -46,7 +46,6 @@ import {
     getAvailableEmailTones,
     getEmailDraftInsights,
     isRequestDeadlineMissed,
-    launchGmailWebHandoffWithStatute,
     launchPortalHandoff,
     scheduleDeadlineReminder,
 } from '../services/handoff';
@@ -753,18 +752,28 @@ export function RequestDetailScreen({
         return;
       }
       const asset = picked.assets[0];
+      const filenameDateMatch = /(\d{4}-\d{2}-\d{2})/.exec(asset.name || '');
+      const candidateDateRaw =
+        noteDateInput.trim() ||
+        (parsedEmail?.dateLabel && parsedEmail.dateLabel !== 'Unknown date' ? parsedEmail.dateLabel : '') ||
+        (filenameDateMatch ? filenameDateMatch[1] : '') ||
+        item.sentAt ||
+        '';
+      const parsedMs = candidateDateRaw ? Date.parse(candidateDateRaw) : NaN;
+      const effectiveCreatedAt = !Number.isNaN(parsedMs) ? new Date(parsedMs).toISOString() : new Date().toISOString();
+      const effectiveDateLabel = candidateDateRaw || effectiveCreatedAt.slice(0, 10);
       const sizeKb = typeof asset.size === 'number' ? ` (${Math.max(1, Math.round(asset.size / 1024))} KB)` : '';
       await addAuditEntry({
         id: `aud-${Date.now()}-pdf`,
         itemId: item.id,
         action: 'REPLY_PDF_UPLOADED',
-        detail: `Attached agency reply PDF: ${asset.name}${sizeKb}${asset.uri ? ` [${asset.uri}]` : ''}`,
-        createdAt: new Date().toISOString(),
+        detail: `Attached agency reply PDF: ${asset.name}${sizeKb} · Email date: ${effectiveDateLabel}${asset.uri ? ` [${asset.uri}]` : ''}`,
+        createdAt: effectiveCreatedAt,
       });
       const log = await getAuditEntries(item.id);
       setAudits(log);
       onUpdated();
-      setFeedbackBanner(`Logged agency reply PDF: ${asset.name}${sizeKb}.`);
+      setFeedbackBanner(`Logged agency reply PDF: ${asset.name}${sizeKb} under email date ${effectiveDateLabel}.`);
     } catch (err: any) {
       setFeedbackBanner(err?.message || 'Could not pick PDF file.');
     }
