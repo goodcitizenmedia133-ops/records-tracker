@@ -147,6 +147,16 @@ export function RequestDetailScreen({
     loadDetails();
   }, [loadDetails]);
 
+  const deadlineMissed = isRequestDeadlineMissed(item);
+  useEffect(() => {
+    if (!item || userPickedTone) return;
+    if (deadlineMissed && emailTone !== 'deadline_follow_up') {
+      setEmailTone('deadline_follow_up');
+    } else if (!deadlineMissed && emailTone === 'deadline_follow_up') {
+      setEmailTone('sweet_courteous');
+    }
+  }, [item, deadlineMissed, emailTone, userPickedTone]);
+
   if (!item) {
     return (
       <View style={styles.centered}>
@@ -339,16 +349,6 @@ export function RequestDetailScreen({
   };
 
   const availableTones = getAvailableEmailTones(item);
-  const deadlineMissed = isRequestDeadlineMissed(item);
-  useEffect(() => {
-    if (userPickedTone) return;
-    if (deadlineMissed && emailTone !== 'deadline_follow_up') {
-      setEmailTone('deadline_follow_up');
-    } else if (!deadlineMissed && emailTone === 'deadline_follow_up') {
-      setEmailTone('sweet_courteous');
-    }
-  }, [deadlineMissed, emailTone, userPickedTone]);
-
   const draftInsights = getEmailDraftInsights(item, {
     requesterSignOff: signOffInput,
     preferredFormat: preferredFormatInput,
