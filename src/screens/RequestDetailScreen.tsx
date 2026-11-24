@@ -589,7 +589,13 @@ export function RequestDetailScreen({
         pass: smtpPassInput || smtpCredentialsByEmail[cleanEmail.toLowerCase()]?.pass || undefined,
       },
     };
+    const detectedProvider = detectProviderComposeId(cleanEmail);
+    const nextProviders: Record<string, ProviderComposeId> = {
+      ...selectedProviderByEmail,
+      [cleanEmail.toLowerCase()]: detectedProvider,
+    };
     setSmtpCredentialsByEmail(nextCreds);
+    setSelectedProviderByEmail(nextProviders);
     void persistRequestSender(cleanEmail, cleanLabel);
     setNewSenderLabel('');
     setNewSenderEmail('');
@@ -598,6 +604,7 @@ export function RequestDetailScreen({
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem('gcm_sender_accounts_v1', JSON.stringify(next));
         window.localStorage.setItem('gcm_sender_smtp_v1', JSON.stringify(nextCreds));
+        window.localStorage.setItem('gcm_sender_provider_v1', JSON.stringify(nextProviders));
       }
     } catch {
       // ignore storage errors
@@ -974,6 +981,55 @@ export function RequestDetailScreen({
             );
           })}
         </View>
+        <Text style={styles.subLabel}>
+          Mail App / Webmail for {(selectedSenderEmail || item.senderEmail || 'Selected Sender')}
+        </Text>
+        <View style={styles.statusGrid}>
+          {(
+            [
+              ['proton', 'Proton Mail'],
+              ['gmail', 'Gmail'],
+              ['outlook', 'Outlook'],
+              ['office365', 'Office 365'],
+              ['yahoo', 'Yahoo'],
+              ['mailto', 'System Mail'],
+            ] as const satisfies ReadonlyArray<readonly [ProviderComposeId, string]>
+          ).map(([pid, plabel]) => {
+            const targetEmail = (selectedSenderEmail || item.senderEmail || '').trim().toLowerCase();
+            const currentPid: ProviderComposeId = targetEmail
+              ? selectedProviderByEmail[targetEmail] || detectProviderComposeId(targetEmail)
+              : 'mailto';
+            const isSelected = currentPid === pid;
+            return (
+              <Pressable
+                key={pid}
+                onPress={() => {
+                  if (!targetEmail) {
+                    setFeedbackBanner('Select or save a sender email first so its mail provider stays locked.');
+                    return;
+                  }
+                  const updatedMap: Record<string, ProviderComposeId> = {
+                    ...selectedProviderByEmail,
+                    [targetEmail]: pid,
+                  };
+                  setSelectedProviderByEmail(updatedMap);
+                  try {
+                    if (typeof window !== 'undefined' && window.localStorage) {
+                      window.localStorage.setItem('gcm_sender_provider_v1', JSON.stringify(updatedMap));
+                    }
+                  } catch {
+                    // ignore storage errors
+                  }
+                  setFeedbackBanner(`Set ${targetEmail} to open via ${plabel}.`);
+                }}
+                style={[styles.chipBtn, isSelected && styles.chipBtnActive]}
+              >
+                <Text style={[styles.chipBtnText, isSelected && styles.chipBtnTextActive]}>{plabel}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <View style={styles.inlineRow}>
           <TextInput
             value={newSenderLabel}

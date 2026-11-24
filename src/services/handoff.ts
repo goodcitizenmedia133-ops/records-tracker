@@ -418,8 +418,13 @@ async function openExternalUrl(url: string): Promise<boolean> {
       const opened = window.open(url, '_blank');
       if (opened) {
         try { opened.opener = null; } catch { }
+        return true;
       }
-      return Boolean(opened);
+      if (/^https?:\/\//i.test(url)) {
+        window.location.assign(url);
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -622,14 +627,27 @@ export async function launchDefaultMailtoHandoff(
   }
 }
 
+export type ProviderComposeId = 'proton' | 'gmail' | 'outlook' | 'office365' | 'yahoo' | 'mailto';
+
+function isProtonDomain(domain: string): boolean {
+  return domain === 'proton.me' || domain === 'protonmail.com' || domain === 'protonmail.ch' || domain === 'pm.me';
+}
+
 export function getProviderWebmailInfo(senderEmail?: string | null): {
-  id: 'comcast' | 'outlook' | 'yahoo' | 'gmail' | 'other';
+  id: 'proton' | 'comcast' | 'outlook' | 'yahoo' | 'gmail' | 'other';
   providerName: string;
   composeUrl: string | null;
 } {
   const email = (senderEmail || '').trim().toLowerCase();
   const domain = email.includes('@') ? email.split('@')[1] : '';
 
+  if (isProtonDomain(domain)) {
+    return {
+      id: 'proton',
+      providerName: 'Proton Mail Web',
+      composeUrl: 'https://mail.proton.me/',
+    };
+  }
   if (domain === 'comcast.net' || domain === 'xfinity.com') {
     return {
       id: 'comcast',
@@ -665,12 +683,11 @@ export function getProviderWebmailInfo(senderEmail?: string | null): {
   };
 }
 
-export type ProviderComposeId = 'gmail' | 'outlook' | 'office365' | 'yahoo' | 'mailto';
-
 export function detectProviderComposeId(senderEmail?: string | null): ProviderComposeId {
   const email = (senderEmail || '').trim().toLowerCase();
   const at = email.lastIndexOf('@');
   const domain = at >= 0 ? email.slice(at + 1) : '';
+  if (isProtonDomain(domain)) return 'proton';
   if (domain === 'gmail.com' || domain === 'googlemail.com') return 'gmail';
   if (domain === 'outlook.com' || domain === 'hotmail.com' || domain === 'live.com' || domain === 'msn.com') return 'outlook';
   if (domain === 'yahoo.com' || domain === 'ymail.com') return 'yahoo';
@@ -678,6 +695,7 @@ export function detectProviderComposeId(senderEmail?: string | null): ProviderCo
 }
 
 export function buildProviderComposeUrl(id: ProviderComposeId, payload: HandoffPayload): string {
+  if (id === 'proton') return 'https://mail.proton.me/';
   const to = encodeURIComponent(normalizeRecipientEmail(payload.to));
   const su = encodeURIComponent(payload.subject.trim());
   const bd = encodeURIComponent(payload.body);
@@ -695,24 +713,35 @@ export async function launchProviderWebmailHandoff(
   options?: RequestLetterOptions & { senderEmail?: string | null; providerId?: ProviderComposeId }
 ): Promise<HandoffResult> {
   const sender = (options?.senderEmail || item.senderEmail || '').trim();
-  const id: ProviderComposeId = options?.providerId || detectProviderComposeId(sender);
+  const detected = detectProviderComposeId(sender);
+  const id: ProviderComposeId = options?.providerId || detected;
   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
   const url = buildProviderComposeUrl(id, { to: bundle.to, subject: bundle.subject, body: bundle.body });
   const limit = id === 'mailto' ? 1900 : 8000;
   if (url.length > limit) {
-    return { ok: false, message: 'This letter is too long to prefill through a link. Use Download Draft (.eml) or Copy Email Packet.' };
+    return { ok: false, message: 'This letter is too long to prefill through a link. Use Download Email File (.eml) or Copy Email Packet.' };
   }
   const who = sender || 'your chosen account';
   try {
     const ok = await openExternalUrl(url);
     if (ok) {
-      return { ok: true, message: 'Opened your draft with recipient, subject and body filled in. Confirm the From address is ' + who + ' before sending.' };
+      if (id === 'proton') {
+        return {
+          ok: true,
+          message: `Opened Proton Mail (https://mail.proton.me/) for ${who}. Use Copy Email Packet if you want To, Subject, and Body pasted quickly.`,
+        };
+      }
+      return {
+        ok: true,
+        message: `Opened ${id === 'mailto' ? 'your mail app' : id} draft for ${who}. Confirm the From address is ${who} before sending.`,
+      };
     }
   } catch {
     // fall through
   }
-  return { ok: false, message: 'Could not open your mail provider automatically. Use Download Draft (.eml) or Copy Email Packet.' };
+  return { ok: false, message: 'Could not open your mail provider automatically. Use Download Email File (.eml) or Copy Email Packet.' };
 }
+
 export interface SmtpSenderConfig {
   host?: string;
   port?: number;
