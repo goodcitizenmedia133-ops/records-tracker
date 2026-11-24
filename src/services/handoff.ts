@@ -352,19 +352,12 @@ export function buildMailtoUrl(payload: HandoffPayload): string {
 }
 
 export function buildGmailComposeUrl(payload: HandoffPayload): string {
-  const queryParts: string[] = ['view=cm', 'fs=1'];
   const recipient = normalizeRecipientEmail(payload.to);
-  if (recipient) {
-    queryParts.push(`to=${encodeURIComponent(recipient)}`);
+  if (!recipient) {
+    return 'https://mail.google.com/mail/';
   }
-  if (payload.subject.trim()) {
-    queryParts.push(`su=${encodeURIComponent(payload.subject.trim())}`);
-  }
-  const encodedBody = payload.body.trim() ? encodeURIComponent(payload.body) : '';
-  if (encodedBody && encodedBody.length <= 1600) {
-    queryParts.push(`body=${encodedBody}`);
-  }
-  return `https://mail.google.com/mail/?${queryParts.join('&')}`;
+  const encodedTo = encodeURIComponent(recipient);
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodedTo}`;
 }
 
 export function buildAnyEmailHandoff(payload: HandoffPayload): AnyEmailHandoffBundle {
@@ -781,6 +774,14 @@ export async function launchProviderWebmailHandoff(
           message: copiedPacket
             ? `Step 1 Done: Copied To (${recipient}), Subject, and Body to clipboard and opened Proton Mail for ${who}. Step 2: Paste into Proton, review, sign, and send. Step 3: Tap Mark Sent below to track it.`
             : `Step 1 Done: Opened Proton Mail for ${who}. Tap Copy Email Packet to grab To (${recipient}), Subject, and Body, paste into Proton, sign, send, then tap Mark Sent.`,
+        };
+      }
+      if (id === 'gmail') {
+        return {
+          ok: true,
+          message: copiedPacket
+            ? `Step 1 Done: Copied full packet (To, Subject & Body) to clipboard and opened Gmail for ${who}. Step 2: Paste into Gmail compose, sign, and send. Step 3: Tap Mark Sent below to track it.`
+            : `Step 1 Done: Opened Gmail for ${who}. Use Copy To, Copy Subject, and Copy Body below, paste into Gmail, sign, and send. Step 3: Tap Mark Sent below to track it.`,
         };
       }
       return {
