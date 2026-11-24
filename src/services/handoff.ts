@@ -1,5 +1,6 @@
 import { Linking, Platform } from 'react-native';
 import { CCJRA_300_PACK } from '../data/statutes/co/ccjra300';
+import { FOIA_552_PACK } from '../data/statutes/fed/foia552';
 import { CORA_200_PACK, StateStatutePack } from '../data/statutes/co/cora200';
 import { loadStateStatutePack, loadStatutePackById } from '../data/statutes/statuteRegistry';
 import { AgencyRecord, PublicRecordItem } from '../types/models';
@@ -33,6 +34,7 @@ export interface RequestLetterOptions {
   toneStyle?: EmailToneStyle;
   coraPack?: StateStatutePack | null;
   ccjraPack?: StateStatutePack | null;
+  foiaPack?: StateStatutePack | null;
   includeCcjraAffirmation?: boolean;
 }
 
@@ -147,11 +149,14 @@ export function buildFormattedRequestText(
   const upperStatute = item.statuteCode.trim().toUpperCase();
   const isCora = upperStatute === 'CORA';
   const isCcjra = upperStatute === 'CCJRA';
+  const isFoia = upperStatute === 'FOIA';
   const pack: StateStatutePack | null = isCora
     ? options?.coraPack || CORA_200_PACK
     : isCcjra
       ? options?.ccjraPack || CCJRA_300_PACK
-      : null;
+      : isFoia
+        ? options?.foiaPack || FOIA_552_PACK
+        : null;
 
   const matchedSectionLines =
     pack && insights.referencedCitations.length > 0
@@ -163,7 +168,11 @@ export function buildFormattedRequestText(
         ? pack.sections
             .filter((sec) => ['C.R.S. § 24-72-303', 'C.R.S. § 24-72-304', 'C.R.S. § 24-72-305', 'C.R.S. § 24-72-306'].includes(sec.citation))
             .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
-        : [];
+        : isFoia && pack
+          ? pack.sections
+              .slice(0, 4)
+              .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
+          : [];
 
   const ccjraAffirmationBlock =
     isCcjra && options?.includeCcjraAffirmation !== false
@@ -231,6 +240,7 @@ export async function buildItemEmailHandoffWithStatute(
   const upper = item.statuteCode.trim().toUpperCase();
   let coraPack: StateStatutePack | null = options?.coraPack || null;
   let ccjraPack: StateStatutePack | null = options?.ccjraPack || null;
+  let foiaPack: StateStatutePack | null = options?.foiaPack || null;
 
   if (!coraPack && (upper === 'CO' || upper === 'CORA')) {
     try {
@@ -248,7 +258,15 @@ export async function buildItemEmailHandoffWithStatute(
     }
   }
 
-  return buildItemEmailHandoff(item, agency, { ...options, coraPack, ccjraPack });
+  if (!foiaPack && upper === 'FOIA') {
+    try {
+      foiaPack = await loadStatutePackById('US_FED_FOIA');
+    } catch {
+      foiaPack = FOIA_552_PACK;
+    }
+  }
+
+  return buildItemEmailHandoff(item, agency, { ...options, coraPack, ccjraPack, foiaPack });
 }
 
 export async function launchGmailWebHandoffWithStatute(

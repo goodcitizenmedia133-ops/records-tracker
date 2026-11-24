@@ -1,14 +1,14 @@
 import type { StateStatutePack } from './co/cora200';
 
 export type SupportedStateCode = 'CO';
-export type SupportedStatutePackId = 'CO_CORA' | 'CO_CCJRA';
+export type SupportedStatutePackId = 'CO_CORA' | 'CO_CCJRA' | 'US_FED_FOIA';
 
 export interface StateStatuteMeta {
   id: SupportedStatutePackId;
-  stateCode: SupportedStateCode;
+  stateCode: SupportedStateCode | 'FED';
   stateName: string;
   actName: string;
-  shortCode: 'CORA' | 'CCJRA';
+  shortCode: 'CORA' | 'CCJRA' | 'FOIA';
   statutoryRange: string;
 }
 
@@ -29,6 +29,14 @@ export const STATUTE_PACK_CATALOG: Record<SupportedStatutePackId, StateStatuteMe
     shortCode: 'CCJRA',
     statutoryRange: 'C.R.S. ? 24-72-301 through ? 24-72-309',
   },
+  US_FED_FOIA: {
+    id: 'US_FED_FOIA',
+    stateCode: 'FED',
+    stateName: 'Federal',
+    actName: 'Freedom of Information Act (FOIA)',
+    shortCode: 'FOIA',
+    statutoryRange: '5 U.S.C. ? 552',
+  },
 };
 
 export const STATE_STATUTE_CATALOG: Record<SupportedStateCode, StateStatuteMeta> = {
@@ -46,6 +54,10 @@ export async function loadStatutePackById(
     case 'CO_CCJRA': {
       const mod = await import('./co/ccjra300');
       return mod.CCJRA_300_PACK;
+    }
+    case 'US_FED_FOIA': {
+      const mod = await import('./fed/foia552');
+      return mod.FOIA_552_PACK;
     }
     default: {
       const _exhaustive: never = packId;
