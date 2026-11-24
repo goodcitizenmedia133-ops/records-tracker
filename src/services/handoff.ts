@@ -59,7 +59,7 @@ function getStatuteHeader(
   if (code === 'CORA') {
     const windowNote =
       toneStyle === 'firm_statutory'
-        ? 'Under CORA (C.R.S. § 24-72-201 and ? 24-72-203), public records are open for inspection and copying. Please make responsive records available promptly or within the statutory three-working-day window, and provide written notice with specific statutory grounds under C.R.S. § 24-72-204 if any portion is withheld or delayed.'
+        ? 'Under CORA (C.R.S. § 24-72-201 and § 24-72-203), public records are open for inspection and copying. Please make responsive records available promptly or within the statutory three-working-day window, and provide written notice with specific statutory grounds under C.R.S. § 24-72-204 if any portion is withheld or delayed.'
         : toneStyle === 'collaborative_concise'
           ? 'Under CORA, please share available records promptly within the standard three-working-day timeframe (or let me know if additional time or clarification is needed).'
           : 'Under CORA, please provide the records promptly or within the statutory three-working-day period (or notify me if an extension applies under C.R.S. § 24-72-203(3)(b)).';
