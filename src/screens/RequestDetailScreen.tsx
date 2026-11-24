@@ -251,10 +251,8 @@ export function RequestDetailScreen({
 
   const effectiveSignOff = useMemo(() => {
     const base = signOffInput.trim();
-    if (!selectedSenderEmail) return base;
-    if (base.toLowerCase().includes(selectedSenderEmail.toLowerCase())) return base;
-    return base ? `${base} (${selectedSenderEmail})` : selectedSenderEmail;
-  }, [signOffInput, selectedSenderEmail]);
+    return base;
+  }, [signOffInput]);
 
   if (!item) {
     return (

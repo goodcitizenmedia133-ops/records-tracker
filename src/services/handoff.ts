@@ -252,13 +252,14 @@ export function buildFormattedRequestText(
         ? 'Please provide written notice in advance before incurring any claimed statutory fees so we can review whether statutory thresholds or exemptions apply.'
         : 'Please let me know in advance if any statutory fees will apply before processing.';
 
-  const closingLine = signOffText
+  const cleanSignOff = signOffText.replace(/\s*\([^)]*@[^)]*\)\s*/g, '').trim();
+  const closingLine = cleanSignOff
     ? toneStyle === 'collaborative_concise'
-      ? `Best regards,\n${signOffText}`
-      : `Sincerely,\n${signOffText}`
+      ? `Best regards,\n${cleanSignOff}`
+      : `Sincerely,\n${cleanSignOff}`
     : toneStyle === 'collaborative_concise'
-      ? 'Thanks for your help and time.'
-      : 'Thank you for your time and assistance.';
+      ? 'Thank you for your time and assistance.'
+      : 'Thank you for your time and consideration.';
 
   const paragraphs: Array<string | null> = [
     greeting,
@@ -393,11 +394,12 @@ export function buildItemEmailHandoff(
   const shortTitle = cleanSubjectTitle(item.title, item.statuteCode);
   const subjectPrefix =
     toneStyle === 'deadline_follow_up'
-      ? `${item.statuteCode} Deadline Follow-Up`
-      : toneStyle === 'sweet_courteous'
-        ? `${item.statuteCode} Public Records Request (With Thanks)`
-        : `${item.statuteCode} Public Records Request`;
-  const subject = `${subjectPrefix}: ${shortTitle} - ${agencyName}`;
+      ? `${item.statuteCode} Records Request Follow-Up`
+      : `${item.statuteCode} Public Records Request`;
+  const cleanAgency = agencyName.trim();
+  const subject = cleanAgency
+    ? `${subjectPrefix}: ${shortTitle} — ${cleanAgency}`
+    : `${subjectPrefix}: ${shortTitle}`;
   const body = buildFormattedRequestText(item, agency, options);
   return buildAnyEmailHandoff({ to, subject, body });
 }
