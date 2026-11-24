@@ -131,7 +131,10 @@ export function addWorkingDays(startIsoDate: string, workingDays: number): strin
   return formatUtcCalendar(cursor);
 }
 
-export function getTodayCalendarDate(): string {
+export function getTodayCalendarDate(timeZone?: string): string {
+  if (timeZone) {
+    return getAgencyLocalDateInfo(new Date(), timeZone).dateYmd;
+  }
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -178,4 +181,216 @@ export function isOverdue(
   const dueYmd = normalizeCalendarDate(dueIsoDate);
   const todayYmd = normalizeCalendarDate(todayIsoDate);
   return todayYmd > dueYmd;
+}
+
+export interface AgencyLocationHint {
+  jurisdiction?: string | null;
+  agencyName?: string | null;
+  stateCode?: string | null;
+  statuteCode?: string | null;
+}
+
+export interface AgencyLocalClockInfo {
+  timeZone: string;
+  dateYmd: string;
+  hour24: number;
+  weekday: number;
+  zoneAbbr: string;
+  isAfterHours: boolean;
+  isNonWorkingDay: boolean;
+}
+
+const STATE_DEFAULT_TZ: Record<string, string> = {
+  AL: 'America/Chicago',
+  AK: 'America/Anchorage',
+  AZ: 'America/Phoenix',
+  AR: 'America/Chicago',
+  CA: 'America/Los_Angeles',
+  CO: 'America/Denver',
+  CT: 'America/New_York',
+  DE: 'America/New_York',
+  DC: 'America/New_York',
+  FL: 'America/New_York',
+  GA: 'America/New_York',
+  HI: 'Pacific/Honolulu',
+  ID: 'America/Boise',
+  IL: 'America/Chicago',
+  IN: 'America/Indiana/Indianapolis',
+  IA: 'America/Chicago',
+  KS: 'America/Chicago',
+  KY: 'America/New_York',
+  LA: 'America/Chicago',
+  ME: 'America/New_York',
+  MD: 'America/New_York',
+  MA: 'America/New_York',
+  MI: 'America/Detroit',
+  MN: 'America/Chicago',
+  MS: 'America/Chicago',
+  MO: 'America/Chicago',
+  MT: 'America/Denver',
+  NE: 'America/Chicago',
+  NV: 'America/Los_Angeles',
+  NH: 'America/New_York',
+  NJ: 'America/New_York',
+  NM: 'America/Denver',
+  NY: 'America/New_York',
+  NC: 'America/New_York',
+  ND: 'America/Chicago',
+  OH: 'America/New_York',
+  OK: 'America/Chicago',
+  OR: 'America/Los_Angeles',
+  PA: 'America/New_York',
+  RI: 'America/New_York',
+  SC: 'America/New_York',
+  SD: 'America/Chicago',
+  TN: 'America/Chicago',
+  TX: 'America/Chicago',
+  UT: 'America/Denver',
+  VT: 'America/New_York',
+  VA: 'America/New_York',
+  WA: 'America/Los_Angeles',
+  WV: 'America/New_York',
+  WI: 'America/Chicago',
+  WY: 'America/Denver',
+};
+
+export function resolveAgencyTimeZone(hint?: AgencyLocationHint | null): string {
+  const combined = `${hint?.jurisdiction || ''} ${hint?.agencyName || ''}`.toLowerCase();
+  const rawState = (hint?.stateCode || '').trim().toUpperCase();
+  const statute = (hint?.statuteCode || '').trim().toUpperCase();
+
+  // Multi-zone city / region overrides using jurisdiction & agency name
+  if (/\bel paso\b|\bhudspeth\b|\bmountain time\b|\bmst\b|\bmdt\b/.test(combined)) {
+    return 'America/Denver';
+  }
+  if (/\bontario\b|\bmalheur\b/.test(combined) && /oregon|\bor\b/.test(combined)) {
+    return 'America/Boise';
+  }
+  if (/\bpanhandle\b|\bpensacola\b|\bdestin\b|\bfort walton\b/.test(combined) && /florida|\bfl\b/.test(combined)) {
+    return 'America/Chicago';
+  }
+  if (/\bwestern north dakota\b|\bwilliston\b|\bdickinson\b|\bmandans?\b|\bbismarck\b/.test(combined)) {
+    return 'America/Denver';
+  }
+  if (/\bwestern south dakota\b|\brapid city\b|\bpennington\b/.test(combined)) {
+    return 'America/Denver';
+  }
+  if (/\bwestern nebraska\b|\bscottsbluff\b|\bnorth platte\b/.test(combined)) {
+    return 'America/Denver';
+  }
+  if (/\bwestern kansas\b|\bgoodland\b|\bdodge city\b|\bgarden city\b/.test(combined)) {
+    return 'America/Denver';
+  }
+  if (/\beastern tennessee\b|\bknoxville\b|\bchattanooga\b/.test(combined)) {
+    return 'America/New_York';
+  }
+  if (/\bwestern kentucky\b|\bpaducah\b|\bowensboro\b/.test(combined)) {
+    return 'America/Chicago';
+  }
+  if (/\bnorthwest indiana\b|\bgary\b|\bhammond\b/.test(combined) && /indiana|\bin\b/.test(combined)) {
+    return 'America/Chicago';
+  }
+
+  if (rawState && STATE_DEFAULT_TZ[rawState]) {
+    return STATE_DEFAULT_TZ[rawState];
+  }
+
+  if (statute === 'CORA' || statute === 'CCJRA') {
+    return 'America/Denver';
+  }
+  if (statute === 'FOIA' || rawState === 'US' || /federal|washington,?\s*d\.?c\.?/.test(combined)) {
+    return 'America/New_York';
+  }
+
+  return 'America/Denver';
+}
+
+export function getAgencyLocalDateInfo(
+  dateInput: Date | string = new Date(),
+  timeZone: string = 'America/Denver'
+): AgencyLocalClockInfo {
+  const dt = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const safeDate = Number.isNaN(dt.getTime()) ? new Date() : dt;
+
+  let dateYmd = '';
+  let hour24 = 0;
+  let zoneAbbr = '';
+
+  try {
+    const partsFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hour12: false,
+      timeZoneName: 'short',
+    });
+    const parts = partsFormatter.formatToParts(safeDate);
+    const y = parts.find((p) => p.type === 'year')?.value || '1970';
+    const m = parts.find((p) => p.type === 'month')?.value || '01';
+    const d = parts.find((p) => p.type === 'day')?.value || '01';
+    const hRaw = parts.find((p) => p.type === 'hour')?.value || '00';
+    dateYmd = `${y}-${m}-${d}`;
+    hour24 = hRaw === '24' ? 0 : Number(hRaw);
+    zoneAbbr = parts.find((p) => p.type === 'timeZoneName')?.value || timeZone;
+  } catch {
+    dateYmd = normalizeCalendarDate(safeDate.toISOString());
+    hour24 = safeDate.getHours();
+    zoneAbbr = timeZone;
+  }
+
+  const weekday = parseUtcCalendar(dateYmd).getUTCDay();
+  const isNonWorkingDay = !isWorkingDay(dateYmd);
+  const isAfterHours = hour24 >= 17;
+
+  return {
+    timeZone,
+    dateYmd,
+    hour24,
+    weekday,
+    zoneAbbr,
+    isAfterHours,
+    isNonWorkingDay,
+  };
+}
+
+export function computeEffectiveFilingDate(
+  timestampInput: Date | string,
+  hint?: AgencyLocationHint | null,
+  businessCutoffHour: number = 17
+): {
+  timeZone: string;
+  zoneAbbr: string;
+  observedDateYmd: string;
+  effectiveReceiptDateYmd: string;
+  rolledNextBusinessDay: boolean;
+  reason: string;
+} {
+  const timeZone = resolveAgencyTimeZone(hint);
+  const info = getAgencyLocalDateInfo(timestampInput, timeZone);
+  const afterCutoff = info.hour24 >= businessCutoffHour;
+  const rolled = info.isNonWorkingDay || afterCutoff;
+
+  const effectiveReceiptDateYmd = rolled
+    ? addWorkingDays(info.dateYmd, 1)
+    : info.dateYmd;
+
+  let reason = `Logged on ${info.dateYmd} (${info.zoneAbbr}) within business hours; clock starts ${effectiveReceiptDateYmd}.`;
+  if (info.isNonWorkingDay && afterCutoff) {
+    reason = `Logged on non-working day after ${businessCutoffHour}:00 ${info.zoneAbbr}; statutory receipt rolls to ${effectiveReceiptDateYmd}.`;
+  } else if (info.isNonWorkingDay) {
+    reason = `Logged on weekend/holiday (${info.dateYmd} ${info.zoneAbbr}); statutory receipt rolls to next business day ${effectiveReceiptDateYmd}.`;
+  } else if (afterCutoff) {
+    reason = `Logged after ${businessCutoffHour}:00 ${info.zoneAbbr} business cutoff; statutory receipt rolls to ${effectiveReceiptDateYmd}.`;
+  }
+
+  return {
+    timeZone,
+    zoneAbbr: info.zoneAbbr,
+    observedDateYmd: info.dateYmd,
+    effectiveReceiptDateYmd,
+    rolledNextBusinessDay: rolled,
+    reason,
+  };
 }
