@@ -132,7 +132,7 @@ export function classifyRequestInput(
       title: 'CCJRA Non-Pecuniary Gain Affirmation Required',
       severity: 'action',
       detail:
-        'Criminal justice record requests under C.R.S. § 24-72-305.5 require a statement affirming no direct business solicitation for pecuniary gain.',
+        'Criminal justice record requests under C.R.S. — 24-72-305.5 require a statement affirming no direct business solicitation for pecuniary gain.',
       recommendedText: STATUTORY_CLAUSES.ccjraNonPecuniaryAffirmation,
     });
 
@@ -329,7 +329,7 @@ export function detectRequestPatterns(
       patternKey: 'fee_and_cost',
       label: 'Fee, Search & Copying Scope',
       matchedKeywords: feeKw,
-      coraCitations: ['C.R.S. ? 24-72-205', 'C.R.S. ? 24-72-203'],
+      coraCitations: ['C.R.S. — 24-72-205', 'C.R.S. — 24-72-203'],
       guidance:
         'Clarify fee limits, free initial search/retrieval rules, and request advance written notice before any charges accrue.',
     });
@@ -343,7 +343,7 @@ export function detectRequestPatterns(
       patternKey: 'email_correspondence',
       label: 'Email & Written Correspondence',
       matchedKeywords: emailKw,
-      coraCitations: ['C.R.S. ? 24-72-202', 'C.R.S. ? 24-72-204.5'],
+      coraCitations: ['C.R.S. — 24-72-202', 'C.R.S. — 24-72-204.5'],
       guidance:
         'Reference public records definitions and electronic mail policy/retention scope where applicable.',
     });
@@ -357,7 +357,7 @@ export function detectRequestPatterns(
       patternKey: 'denial_or_exemption',
       label: 'Exemptions, Redactions & Review Rights',
       matchedKeywords: denialKw,
-      coraCitations: ['C.R.S. ? 24-72-204', 'C.R.S. ? 24-72-201'],
+      coraCitations: ['C.R.S. — 24-72-204', 'C.R.S. — 24-72-201'],
       guidance:
         'Note the presumption of public access and request specific statutory citations for any withheld or redacted material.',
     });
@@ -371,7 +371,7 @@ export function detectRequestPatterns(
       patternKey: 'ballots_and_elections',
       label: 'Ballots & Election Records',
       matchedKeywords: ballotKw,
-      coraCitations: ['C.R.S. ? 24-72-205.5'],
+      coraCitations: ['C.R.S. — 24-72-205.5'],
       guidance:
         'Account for statutory ballot inspection rules, stay periods, and recount timelines.',
     });
@@ -383,7 +383,7 @@ export function detectRequestPatterns(
       patternKey: 'personnel_records',
       label: 'Personnel & Employment Context',
       matchedKeywords: personKw.slice(0, 5),
-      coraCitations: ['C.R.S. ? 24-72-202', 'C.R.S. ? 24-72-204'],
+      coraCitations: ['C.R.S. — 24-72-202', 'C.R.S. — 24-72-204'],
       guidance:
         'Separate public compensation, contracts, and non-exempt records from protected personnel privacy material.',
     });
@@ -396,7 +396,7 @@ export function detectRequestPatterns(
       matchedKeywords: [],
       coraCitations:
         statuteCode.toUpperCase() === 'CORA'
-          ? ['C.R.S. ? 24-72-200.1', 'C.R.S. ? 24-72-201', 'C.R.S. ? 24-72-202', 'C.R.S. ? 24-72-203']
+          ? ['C.R.S. — 24-72-200.1', 'C.R.S. — 24-72-201', 'C.R.S. — 24-72-202', 'C.R.S. — 24-72-203']
           : [],
       guidance:
         'Anchor the request in the statutory right of inspection/copying and reasonable custodian access rules.',

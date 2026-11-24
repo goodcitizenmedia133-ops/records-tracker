@@ -1,6 +1,7 @@
 import { Linking, Platform } from 'react-native';
+import { CCJRA_300_PACK } from '../data/statutes/co/ccjra300';
 import { CORA_200_PACK, StateStatutePack } from '../data/statutes/co/cora200';
-import { loadStateStatutePack } from '../data/statutes/statuteRegistry';
+import { loadStateStatutePack, loadStatutePackById } from '../data/statutes/statuteRegistry';
 import { AgencyRecord, PublicRecordItem } from '../types/models';
 import { detectRequestPatterns, RequestPatternMatch } from './wizardEngine';
 
@@ -31,6 +32,8 @@ export interface RequestLetterOptions {
   preferredFormat?: string;
   toneStyle?: EmailToneStyle;
   coraPack?: StateStatutePack | null;
+  ccjraPack?: StateStatutePack | null;
+  includeCcjraAffirmation?: boolean;
 }
 
 export interface EmailDraftInsights {
@@ -54,25 +57,27 @@ function getStatuteHeader(
   if (code === 'CORA') {
     const windowNote =
       toneStyle === 'firm_statutory'
-        ? 'Under CORA (C.R.S. ? 24-72-201 and ? 24-72-203), public records are open for inspection and copying. Please make responsive records available promptly or within the statutory three-working-day window, and provide written notice with specific statutory grounds under C.R.S. ? 24-72-204 if any portion is withheld or delayed.'
+        ? 'Under CORA (C.R.S. § 24-72-201 and ? 24-72-203), public records are open for inspection and copying. Please make responsive records available promptly or within the statutory three-working-day window, and provide written notice with specific statutory grounds under C.R.S. § 24-72-204 if any portion is withheld or delayed.'
         : toneStyle === 'collaborative_concise'
           ? 'Under CORA, please share available records promptly within the standard three-working-day timeframe (or let me know if additional time or clarification is needed).'
-          : 'Under CORA, please provide the records promptly or within the statutory three-working-day period (or notify me if an extension applies under C.R.S. ? 24-72-203(3)(b)).';
+          : 'Under CORA, please provide the records promptly or within the statutory three-working-day period (or notify me if an extension applies under C.R.S. § 24-72-203(3)(b)).';
     return {
-      label: 'Colorado Open Records Act (CORA, C.R.S. ? 24-72-200.1 et seq.)',
+      label: 'Colorado Open Records Act (CORA, C.R.S. § 24-72-200.1 et seq.)',
       windowNote,
     };
   }
   switch (code) {
     case 'CCJRA':
       return {
-        label: 'Colorado Criminal Justice Records Act (CCJRA, C.R.S. ? 24-72-301 et seq.)',
+        label: 'Colorado Criminal Justice Records Act (CCJRA, C.R.S. § 24-72-301 et seq.)',
         windowNote:
-          'Please make non-exempt criminal justice records available for inspection or copy in accordance with CCJRA.',
+          toneStyle === 'firm_statutory'
+            ? 'Under CCJRA, records of official action are open for inspection under C.R.S. § 24-72-303, and any denial or withholding of criminal justice records must be supported by a written statement of statutory or public-interest grounds within 72 hours of request under C.R.S. § 24-72-305(6).'
+            : 'Please make records of official action and non-exempt criminal justice records available for inspection or copying in accordance with CCJRA (C.R.S. § 24-72-301 et seq.), with any written denial grounds provided within 72 hours under C.R.S. § 24-72-305(6).',
       };
     case 'FOIA':
       return {
-        label: 'Freedom of Information Act (FOIA, 5 U.S.C. ? 552)',
+        label: 'Freedom of Information Act (FOIA, 5 U.S.C. § 552)',
         windowNote:
           'Under FOIA, I look forward to your determination within the statutory 20-business-day timeframe.',
       };
@@ -100,8 +105,8 @@ export function getEmailDraftInsights(
     }
   }
   if (item.statuteCode.trim().toUpperCase() === 'CORA' && citationSet.size === 0) {
-    citationSet.add('C.R.S. ? 24-72-200.1');
-    citationSet.add('C.R.S. ? 24-72-201');
+    citationSet.add('C.R.S. § 24-72-200.1');
+    citationSet.add('C.R.S. § 24-72-201');
   }
   return {
     toneStyle,
@@ -139,8 +144,14 @@ export function buildFormattedRequestText(
   const signOffText = (options?.requesterSignOff || '').trim();
 
   const insights = getEmailDraftInsights(item, options);
-  const isCora = item.statuteCode.trim().toUpperCase() === 'CORA';
-  const pack: StateStatutePack | null = isCora ? options?.coraPack || CORA_200_PACK : null;
+  const upperStatute = item.statuteCode.trim().toUpperCase();
+  const isCora = upperStatute === 'CORA';
+  const isCcjra = upperStatute === 'CCJRA';
+  const pack: StateStatutePack | null = isCora
+    ? options?.coraPack || CORA_200_PACK
+    : isCcjra
+      ? options?.ccjraPack || CCJRA_300_PACK
+      : null;
 
   const matchedSectionLines =
     pack && insights.referencedCitations.length > 0
@@ -148,7 +159,16 @@ export function buildFormattedRequestText(
           .filter((sec) => insights.referencedCitations.includes(sec.citation))
           .slice(0, 4)
           .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
-      : [];
+      : isCcjra && pack
+        ? pack.sections
+            .filter((sec) => ['C.R.S. § 24-72-303', 'C.R.S. § 24-72-304', 'C.R.S. § 24-72-305', 'C.R.S. § 24-72-306'].includes(sec.citation))
+            .map((sec) => `- ${sec.citation} (${sec.title}): ${sec.appGuidance}`)
+        : [];
+
+  const ccjraAffirmationBlock =
+    isCcjra && options?.includeCcjraAffirmation !== false
+      ? 'CCJRA Non-Pecuniary Solicitation Statement (C.R.S. § 24-72-305.5): Pursuant to C.R.S. § 24-72-305.5, these requested criminal justice records will not be used for the direct solicitation of business for pecuniary gain.'
+      : null;
 
   const greeting =
     toneStyle === 'firm_statutory'
@@ -181,7 +201,7 @@ export function buildFormattedRequestText(
 
   const statuteRefBlock =
     matchedSectionLines.length > 0
-      ? ['Applicable CORA Reference Notes:', ...matchedSectionLines].join('\n')
+      ? ['Applicable Statute Reference Notes:', ...matchedSectionLines].join('\n')
       : null;
 
   const paragraphs: Array<string | null> = [
@@ -191,6 +211,7 @@ export function buildFormattedRequestText(
     statute.windowNote,
     feeLine,
     statuteRefBlock,
+    ccjraAffirmationBlock,
     item.dueDate ? `Target statutory response date: ${item.dueDate}.` : null,
     notesText ? `Additional context: ${notesText}` : null,
     formatPreference,
@@ -207,15 +228,27 @@ export async function buildItemEmailHandoffWithStatute(
   agency: AgencyRecord | null,
   options?: RequestLetterOptions
 ): Promise<AnyEmailHandoffBundle> {
+  const upper = item.statuteCode.trim().toUpperCase();
   let coraPack: StateStatutePack | null = options?.coraPack || null;
-  if (!coraPack && item.statuteCode.trim().toUpperCase() === 'CO' || item.statuteCode.trim().toUpperCase() === 'CORA') {
+  let ccjraPack: StateStatutePack | null = options?.ccjraPack || null;
+
+  if (!coraPack && (upper === 'CO' || upper === 'CORA')) {
     try {
       coraPack = await loadStateStatutePack('CO');
     } catch {
       coraPack = CORA_200_PACK;
     }
   }
-  return buildItemEmailHandoff(item, agency, { ...options, coraPack });
+
+  if (!ccjraPack && upper === 'CCJRA') {
+    try {
+      ccjraPack = await loadStatutePackById('CO_CCJRA');
+    } catch {
+      ccjraPack = CCJRA_300_PACK;
+    }
+  }
+
+  return buildItemEmailHandoff(item, agency, { ...options, coraPack, ccjraPack });
 }
 
 export async function launchGmailWebHandoffWithStatute(
