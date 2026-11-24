@@ -104,6 +104,13 @@ export async function getItemById(id: string): Promise<PublicRecordItem | null> 
   return memoryStore.items.find((i) => i.id === id) ?? null;
 }
 
+export async function deleteItem(id: string): Promise<void> {
+  await initDatabase();
+  memoryStore.items = memoryStore.items.filter((i) => i.id !== id);
+  memoryStore.audits = memoryStore.audits.filter((a) => a.itemId !== id);
+  persist();
+}
+
 export async function upsertItem(item: PublicRecordItem): Promise<void> {
   await initDatabase();
   const idx = memoryStore.items.findIndex((i) => i.id === item.id);

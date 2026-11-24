@@ -31,7 +31,8 @@ import {
     getAllAgencies,
     getAllItems,
     getAuditEntries,
-    getItemById,
+    deleteItem,
+  getItemById,
     upsertItem,
 } from '../services/database';
 import {
@@ -92,6 +93,7 @@ export function RequestDetailScreen({
   const [showArchivedAudits, setShowArchivedAudits] = useState(false);
   const [auditFilter, setAuditFilter] = useState<'all' | 'sent' | 'pdf' | 'notes'>('all');
   const [confirmDeleteAuditId, setConfirmDeleteAuditId] = useState<string | null>(null);
+  const [confirmDeleteRequest, setConfirmDeleteRequest] = useState(false);
   const [archivedAuditIds, setArchivedAuditIds] = useState<string[]>(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -1203,6 +1205,29 @@ export function RequestDetailScreen({
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Replies, Exports &amp; Records</Text>
+        <Text style={styles.mutedText}>
+          Reply date anchored on PDF upload: {noteDateInput.trim() || (parsedEmail?.dateLabel && parsedEmail.dateLabel !== 'Unknown date' ? parsedEmail.dateLabel : '') || (item.sentAt ? item.sentAt.slice(0, 10) : 'Current date')}
+        </Text>
+        <View style={styles.statusGrid}>
+          {(
+            [
+              ['partially_fulfilled', 'Mark Partial'],
+              ['fulfilled', 'Mark Fulfilled'],
+              ['denied', 'Mark Denied'],
+            ] as const satisfies ReadonlyArray<readonly [RecordStatus, string]>
+          ).map(([st, lbl]) => {
+            const active = item.status === st;
+            return (
+              <Pressable
+                key={st}
+                onPress={() => void handleStatusChange(st)}
+                style={[styles.chipBtn, active && styles.chipBtnActive]}
+              >
+                <Text style={[styles.chipBtnText, active && styles.chipBtnTextActive]}>{lbl}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>
             Hide Personal Info (SSN, phone, email, address) on export
@@ -1218,6 +1243,23 @@ export function RequestDetailScreen({
         <Pressable onPress={handleExportPdf} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>
             Export &amp; Share PDF Packet
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={async () => {
+            if (!confirmDeleteRequest) {
+              setConfirmDeleteRequest(true);
+              setFeedbackBanner('Tap Delete Request again to permanently remove this request and its log entries.');
+              return;
+            }
+            await deleteItem(item.id);
+            onUpdated();
+            onBack();
+          }}
+          style={styles.warnBtn}
+        >
+          <Text style={styles.warnBtnText}>
+            {confirmDeleteRequest ? 'Tap Again to Permanently Delete Request' : 'Delete Request'}
           </Text>
         </Pressable>
       </View>

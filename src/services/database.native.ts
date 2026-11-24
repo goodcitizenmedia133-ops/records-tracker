@@ -168,6 +168,17 @@ export async function getItemById(id: string): Promise<PublicRecordItem | null> 
   return row ?? null;
 }
 
+export async function deleteItem(id: string): Promise<void> {
+  await initDatabase();
+  const db = await getDb();
+  memoryStore.items = memoryStore.items.filter((i) => i.id !== id);
+  memoryStore.audits = memoryStore.audits.filter((a) => a.itemId !== id);
+  if (db) {
+    await db.runAsync('DELETE FROM audit_entries WHERE itemId = ?', [id]);
+    await db.runAsync('DELETE FROM record_items WHERE id = ?', [id]);
+  }
+}
+
 export async function upsertItem(item: PublicRecordItem): Promise<void> {
   const db = await getDb();
   if (!db) {
