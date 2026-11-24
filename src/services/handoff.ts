@@ -206,51 +206,47 @@ export function buildFormattedRequestText(
   const agencyName = (agency?.name || item.agencyName || '').trim() || 'Records Custodian';
   const toneStyle: EmailToneStyle = options?.toneStyle || 'clear_professional';
   const statute = getStatuteHeader(item.statuteCode, toneStyle);
-  const scopeText = (item.summary || '').trim() || item.title.trim();
-  const notesText = (item.notes || '').trim();
+  const rawScope = ((item.summary || '').trim() || item.title.trim()).replace(/\s+/g, ' ');
+  const scopeText = rawScope ? (/[.!?]$/.test(rawScope) ? rawScope : `${rawScope}.`) : '';
+  const notesText = (item.notes || '').trim().replace(/\s+/g, ' ');
   const formatPreference =
     (options?.preferredFormat || '').trim() ||
-    'Electronic delivery in searchable PDF or native digital format via reply email is preferred if available.';
+    'Electronic delivery in searchable PDF or native digital format via reply email is preferred where available.';
   const signOffText = (options?.requesterSignOff || '').trim();
 
-  const insights = getEmailDraftInsights(item, options);
   const upperStatute = item.statuteCode.trim().toUpperCase();
-  const isCora = upperStatute === 'CORA';
   const isCcjra = upperStatute === 'CCJRA';
-  const isFoia = upperStatute === 'FOIA';
-  const pack: StateStatutePack | null = isCora
-    ? options?.coraPack || CORA_200_PACK
-    : isCcjra
-      ? options?.ccjraPack || CCJRA_300_PACK
-      : isFoia
-        ? options?.foiaPack || FOIA_552_PACK
-        : null;
 
   const ccjraAffirmationBlock =
     isCcjra && options?.includeCcjraAffirmation !== false
-      ? 'CCJRA Non-Pecuniary Solicitation Statement (C.R.S. § 24-72-305.5): Pursuant to C.R.S. § 24-72-305.5, these requested criminal justice records will not be used for the direct solicitation of business for pecuniary gain.'
+      ? 'Pursuant to C.R.S. § 24-72-305.5, these requested criminal justice records will not be used for the direct solicitation of business for pecuniary gain.'
       : null;
 
+  const cleanTitle = item.title.trim().replace(/\s+/g, ' ');
   const greeting =
     toneStyle === 'firm_statutory'
       ? `Dear ${agencyName} Public Records Custodian,`
       : toneStyle === 'collaborative_concise'
-        ? `Hi ${agencyName} Team,`
+        ? `Hello ${agencyName} Team,`
         : `Hello ${agencyName} Records Custodian,`;
 
   const openingLine =
     toneStyle === 'firm_statutory'
-      ? `Pursuant to the ${statute.label}, please accept this formal request to inspect and obtain copies of public records concerning "${item.title.trim()}":`
+      ? `Pursuant to the ${statute.label}, I am requesting to inspect and obtain copies of public records concerning ${cleanTitle}.`
       : toneStyle === 'collaborative_concise'
-        ? `I am reaching out under the ${statute.label} to request copies or inspection of records related to "${item.title.trim()}":`
-        : `Pursuant to the ${statute.label}, I am requesting copies of (or the opportunity to inspect) the following public records regarding "${item.title.trim()}":`;
+        ? `I am reaching out under the ${statute.label} to request copies of (or access to inspect) records regarding ${cleanTitle}.`
+        : `Pursuant to the ${statute.label}, I am requesting copies of (or the opportunity to inspect) public records regarding ${cleanTitle}.`;
 
-  const feeLine =
-    item.feeQuoted !== null && item.feeQuoted !== undefined
-      ? `Fee noted to date: ${item.feeQuoted}. Please confirm any applicable statutory copying, search, or retrieval charges in advance before incurring costs.`
-      : toneStyle === 'firm_statutory'
-        ? 'Please provide written notice in advance before incurring any claimed statutory fees so we can review whether statutory thresholds or exemptions apply.'
-        : 'Please let me know in advance if any statutory fees will apply before processing.';
+  const formattedFee =
+    item.feeQuoted !== null && item.feeQuoted !== undefined && !Number.isNaN(Number(item.feeQuoted))
+      ? `$${Number(item.feeQuoted).toFixed(2)}`
+      : null;
+
+  const feeLine = formattedFee
+    ? `Regarding the ${formattedFee} fee noted to date, please confirm any applicable statutory copying, search, or retrieval charges in writing before incurring costs.`
+    : toneStyle === 'firm_statutory'
+      ? 'Please provide written notice in advance before incurring any claimed statutory fees so we can review whether statutory thresholds or exemptions apply.'
+      : 'Please let me know in advance if any statutory fees will apply before processing.';
 
   const cleanSignOff = signOffText.replace(/\s*\([^)]*@[^)]*\)\s*/g, '').trim();
   const closingLine = cleanSignOff
@@ -264,19 +260,20 @@ export function buildFormattedRequestText(
   const paragraphs: Array<string | null> = [
     greeting,
     openingLine,
-    scopeText,
-    statute.windowNote,
+    scopeText || null,
+    statute.windowNote || null,
     feeLine,
     ccjraAffirmationBlock,
     item.dueDate ? `Target statutory response date: ${item.dueDate}.` : null,
-    notesText ? `Additional context: ${notesText}` : null,
+    notesText ? `Additional details: ${/[.!?]$/.test(notesText) ? notesText : `${notesText}.`}` : null,
     formatPreference,
     closingLine,
   ];
 
-  return paragraphs.filter((part): part is string => Boolean(part)).join('\n\n');
+  return paragraphs
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .join('\n\n');
 }
-
 export async function buildItemEmailHandoffWithStatute(
   item: PublicRecordItem,
   agency: AgencyRecord | null,
