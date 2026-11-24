@@ -340,7 +340,7 @@ export async function buildItemEmailHandoffWithStatute(
 export async function launchGmailWebHandoffWithStatute(
   item: PublicRecordItem,
   agency: AgencyRecord | null,
-  options?: RequestLetterOptions
+  options?: RequestLetterOptions & { senderEmail?: string | null }
 ): Promise<HandoffResult> {
   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);
   try {
@@ -682,7 +682,8 @@ export async function launchProviderWebmailHandoff(
   const provider = getProviderWebmailInfo(senderEmail);
 
   if (!provider.composeUrl) {
-    return launchGmailWebHandoffWithStatute(item, agency, options);
+    const res = await launchGmailWebHandoffWithStatute(item, agency, options);
+    return res;
   }
 
   const bundle = await buildItemEmailHandoffWithStatute(item, agency, options);

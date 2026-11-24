@@ -109,6 +109,8 @@ export function RequestDetailScreen({
   });
   const [selectedSenderEmail, setSelectedSenderEmail] = useState('');
   const [pendingSwitchSender, setPendingSwitchSender] = useState<string | null>(null);
+  const [copiedPacketFeedback, setCopiedPacketFeedback] = useState(false);
+  const [copiedHeaderFeedback, setCopiedHeaderFeedback] = useState(false);
   const [newSenderLabel, setNewSenderLabel] = useState('');
   const [newSenderEmail, setNewSenderEmail] = useState('');
   const [noteInput, setNoteInput] = useState('');
@@ -420,9 +422,48 @@ export function RequestDetailScreen({
     toneStyle: emailTone,
   });
 
+  const copyTextReliably = async (text: string): Promise<boolean> => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fall through to textarea fallback
+    }
+    if (typeof document !== 'undefined') {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) return true;
+      } catch {
+        // fall through to expo-clipboard
+      }
+    }
+    try {
+      await Clipboard.setStringAsync(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleCopyText = async () => {
-    await Clipboard.setStringAsync(emailBundle.clipboardText);
-    setFeedbackBanner('Formatted request email & metadata copied to clipboard.');
+    const ok = await copyTextReliably(emailBundle.clipboardText);
+    if (ok) {
+      setCopiedPacketFeedback(true);
+      setTimeout(() => setCopiedPacketFeedback(false), 2500);
+      setFeedbackBanner('Copied full email (To, Subject & Body) to clipboard.');
+    } else {
+      setFeedbackBanner('Clipboard blocked by browser—select and copy from the preview box below.');
+    }
   };
 
   const handleDownloadEml = async () => {
@@ -499,7 +540,8 @@ export function RequestDetailScreen({
 
   const livePortalUrl = (agency?.portalUrl || '').trim();
   const hasValidPortal =
-    /^https?:\/\//i.test(livePortalUrl) && !/\.example\.(gov|com|org)(\/|$)/i.test(livePortalUrl);
+    /^https?:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(livePortalUrl) &&
+    !/\.(example|placeholder|test|invalid)\.(gov|com|org|net)(\/|$)/i.test(livePortalUrl);
 
   const handleCopyHeaderMeta = async () => {
     const line = [
@@ -508,8 +550,14 @@ export function RequestDetailScreen({
     ]
       .filter(Boolean)
       .join(' | ');
-    await Clipboard.setStringAsync(line || emailBundle.subject);
-    setFeedbackBanner('Recipient & subject copied to clipboard.');
+    const ok = await copyTextReliably(line || emailBundle.subject);
+    if (ok) {
+      setCopiedHeaderFeedback(true);
+      setTimeout(() => setCopiedHeaderFeedback(false), 2500);
+      setFeedbackBanner('Recipient & subject copied to clipboard.');
+    } else {
+      setFeedbackBanner('Clipboard blocked by browser—copy To & Subject from the preview box below.');
+    }
   };
 
   const handleReminder = async () => {
@@ -617,26 +665,32 @@ export function RequestDetailScreen({
             </Text>
           </Pressable>
           <Pressable onPress={handleCopyText} style={styles.actionBtn}>
-            <Text style={styles.actionBtnText}>Copy Email Packet</Text>
+            <Text style={styles.actionBtnText}>
+              {copiedPacketFeedback ? 'Copied Email!' : 'Copy Email Packet'}
+            </Text>
           </Pressable>
-          {hasValidPortal ? (
-            <Pressable onPress={handlePortal} style={styles.actionBtn}>
-              <Text style={styles.actionBtnText}>Open Portal</Text>
-            </Pressable>
-          ) : (
-            <Pressable onPress={handleCopyHeaderMeta} style={styles.actionBtn}>
-              <Text style={styles.actionBtnText}>Copy To &amp; Subject</Text>
-            </Pressable>
-          )}
           <Pressable onPress={handleOpenDefaultMail} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Open Default Mail</Text>
           </Pressable>
           <Pressable onPress={handleDownloadEml} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Download Draft (.eml)</Text>
           </Pressable>
-          <Pressable onPress={handleReminder} style={styles.actionBtn}>
-            <Text style={styles.actionBtnText}>Set 9 AM Alert</Text>
-          </Pressable>
+          {hasValidPortal ? (
+            <Pressable onPress={handlePortal} style={styles.actionBtn}>
+              <Text style={styles.actionBtnText}>Open Records Portal</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={handleCopyHeaderMeta} style={styles.actionBtn}>
+              <Text style={styles.actionBtnText}>
+                {copiedHeaderFeedback ? 'Copied To & Subject!' : 'Copy To & Subject'}
+              </Text>
+            </Pressable>
+          )}
+          {item.dueDate && item.status !== 'draft' && item.status !== 'fulfilled' && item.status !== 'denied' ? (
+            <Pressable onPress={handleReminder} style={styles.actionBtn}>
+              <Text style={styles.actionBtnText}>Download Calendar (.ics)</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text style={styles.subLabel}>Email Tone & Style (4 Active Modes)</Text>
