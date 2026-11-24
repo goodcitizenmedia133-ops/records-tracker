@@ -454,9 +454,11 @@ export function RequestDetailScreen({
         createdAt: new Date().toISOString(),
       });
       setNoteInput('');
+      setRawEmailInput('');
+      setParsedEmail(null);
       const log = await getAuditEntries(item.id);
       setAudits(log);
-      setFeedbackBanner('Imported email correspondence into the audit log.');
+      setFeedbackBanner('Saved reply to the activity log.');
     } else {
       setFeedbackBanner('Populated Note and Fee fields from email. Review and save.');
     }
@@ -1246,6 +1248,22 @@ export function RequestDetailScreen({
           </Text>
         </Pressable>
         <Pressable
+          onPress={() => {
+            const followUpTone = availableTones.find((t) => t.id === 'deadline_follow_up');
+            const chosenTone = followUpTone ? followUpTone.id : 'clear_professional';
+            setUserPickedTone(true);
+            setEmailTone(chosenTone);
+            setFeedbackBanner(
+              followUpTone
+                ? 'Switched letter tone to Deadline Follow-Up.'
+                : 'Switched letter tone to Clear & Professional for follow-up.'
+            );
+          }}
+          style={styles.actionBtn}
+        >
+          <Text style={styles.actionBtnText}>Prepare Follow-Up Draft</Text>
+        </Pressable>
+        <Pressable
           onPress={async () => {
             if (!confirmDeleteRequest) {
               setConfirmDeleteRequest(true);
@@ -1293,7 +1311,7 @@ export function RequestDetailScreen({
               style={styles.actionBtn}
             >
               <Text style={styles.actionBtnText}>
-                PII Scrub: {scrubEmailPii ? 'ON' : 'OFF'}
+                Hide Personal Info: {scrubEmailPii ? 'ON' : 'OFF'}
               </Text>
             </Pressable>
             <Pressable
@@ -1306,7 +1324,7 @@ export function RequestDetailScreen({
               onPress={() => void handleApplyEmailToInputs(true)}
               style={[styles.actionBtn, styles.primaryActionBtn]}
             >
-              <Text style={styles.primaryActionBtnText}>Save Audit Note</Text>
+              <Text style={styles.primaryActionBtnText}>Save Reply to Log</Text>
             </Pressable>
           </View>
 
