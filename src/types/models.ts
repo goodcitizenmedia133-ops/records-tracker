@@ -35,6 +35,10 @@ export interface AgencyRecord {
   portalUrl: string;
   defaultStatute: string;
   formPdfRelativePath: string;
+  countyName?: string | null;
+  municipalityName?: string | null;
+  agencyKind?: 'state' | 'county' | 'city' | 'township' | 'village' | 'school' | 'law_enforcement' | 'federal' | null;
+  timeZone?: string | null;
 }
 export interface PublicRecordItem {
   id: string;

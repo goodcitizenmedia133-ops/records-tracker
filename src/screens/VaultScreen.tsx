@@ -30,7 +30,7 @@ interface VaultScreenProps {
   onOpenUpload?: () => void;
 }
 
-const STATUTE_CHOICES: StatuteCode[] = ['CORA', 'CCJRA', 'FOIA'];
+const STATUTE_CHOICES: StatuteCode[] = ['CORA', 'CCJRA', 'MIFOIA', 'FOIA'];
 
 export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
   const [agencies, setAgencies] = useState<AgencyRecord[]>([]);
@@ -85,7 +85,7 @@ export function VaultScreen({ onDataChanged, onOpenUpload }: VaultScreenProps) {
       id: `agency-${Date.now()}`,
       name: cleanName,
       jurisdiction: jurisdiction.trim() || 'Colorado',
-      stateCode: defaultStatute === 'FOIA' ? 'US' : 'CO',
+      stateCode: defaultStatute === 'FOIA' ? 'US' : defaultStatute === 'MIFOIA' ? 'MI' : 'CO',
       contactEmail: contactEmail.trim(),
       portalUrl: portalUrl.trim(),
       defaultStatute,

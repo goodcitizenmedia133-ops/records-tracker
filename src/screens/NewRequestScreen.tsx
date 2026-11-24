@@ -15,7 +15,7 @@ interface NewRequestScreenProps {
   onSaved?: (item: PublicRecordItem) => void;
 }
 
-const STATUTE_LIST: StatuteCode[] = ['CORA', 'CCJRA', 'FOIA'];
+const STATUTE_LIST: StatuteCode[] = ['CORA', 'CCJRA', 'MIFOIA', 'FOIA'];
 
 export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRequestScreenProps) {
   const [statuteCode, setStatuteCode] = useState<StatuteCode>('CORA');
@@ -62,7 +62,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
   }, [classification.suggestedStatute, statuteManuallyPicked, wizardPrompt.length]);
 
   const jurisdiction: JurisdictionCode = statuteCode === 'FOIA' ? 'US-FED' : 'US-CO';
-  const stateCode = statuteCode === 'FOIA' ? 'US' : 'CO';
+  const stateCode = statuteCode === 'FOIA' ? 'US' : statuteCode === 'MIFOIA' ? 'MI' : 'CO';
 
   const matchingAgencies = useMemo(() => {
     const q = agencyName.trim().toLowerCase();
@@ -85,7 +85,7 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
     setAgencyName(agency.name);
     if (agency.contactEmail) setCustodianEmail(agency.contactEmail);
     const upperStatute = (agency.defaultStatute || '').toUpperCase();
-    if (upperStatute === 'CORA' || upperStatute === 'CCJRA' || upperStatute === 'FOIA') {
+    if (upperStatute === 'CORA' || upperStatute === 'CCJRA' || upperStatute === 'MIFOIA' || upperStatute === 'FOIA') {
       setStatuteCode(upperStatute);
       setStatuteManuallyPicked(true);
     }

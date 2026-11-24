@@ -231,9 +231,12 @@ export function RequestDetailScreen({
   const statuteCode = (
     item.statuteCode === 'CORA' ||
     item.statuteCode === 'CCJRA' ||
+    item.statuteCode === 'MIFOIA' ||
     item.statuteCode === 'FOIA'
       ? item.statuteCode
-      : 'CORA'
+      : (agency as any)?.stateCode === 'MI'
+        ? 'MIFOIA'
+        : 'CORA'
   ) as StatuteCode;
   const statute = STATUTES[statuteCode];
 

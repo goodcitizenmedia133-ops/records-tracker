@@ -1,6 +1,6 @@
 import { RecordStatus } from '../types/models';
 
-export type StatuteCode = 'CORA' | 'CCJRA' | 'FOIA';
+export type StatuteCode = 'CORA' | 'CCJRA' | 'MIFOIA' | 'FOIA';
 
 export interface StatuteDefinition {
   code: StatuteCode;
@@ -33,6 +33,16 @@ export const STATUTES: Record<StatuteCode, StatuteDefinition> = {
     summary:
       'Governs criminal justice and internal affairs records; requires a signed affirmation that records will not be used for direct solicitation of business for pecuniary gain.',
   },
+  MIFOIA: {
+    code: 'MIFOIA',
+    name: 'Michigan Freedom of Information Act',
+    citation: 'MCL 15.231 et seq. (PA 442 of 1976)',
+    defaultWorkingDays: 5,
+    maxExtensionWorkingDays: 10,
+    requiresNonPecuniaryAffirmation: false,
+    summary:
+      'Public body must respond within 5 business days of receipt (electronic requests deemed received 1 business day after transmission), with at most one written extension of up to 10 additional business days.',
+  },
   FOIA: {
     code: 'FOIA',
     name: 'Freedom of Information Act',
@@ -56,6 +66,10 @@ export const STATUTORY_CLAUSES = {
   ],
   ccjraNonPecuniaryAffirmation:
     'Pursuant to C.R.S. § 24-72-305.5, I affirm that the requested criminal justice records shall not be used for the direct solicitation of business for pecuniary gain.',
+  mifoiaElectronicReceiptAndFormat:
+    'Pursuant to the Michigan Freedom of Information Act, MCL 15.231 et seq. (including MCL 15.235), please treat this electronic transmission as received on the next business day and provide responsive public records electronically where maintained in digital form.',
+  mifoiaFeeItemizationAndReductionNotice:
+    'Pursuant to MCL 15.234, please provide a detailed fee itemization before assessing charges, apply any statutory fee waivers or 5%-per-day (up to 50%) late-response labor fee reductions under MCL 15.234(9) where applicable, and state your response or single 10-business-day extension under MCL 15.235(2).',
 };
 
 // 2026–2030 US Federal & Colorado State Holidays (YYYY-MM-DD)
