@@ -202,6 +202,13 @@ export function RequestDetailScreen({
     }
   }, [item, deadlineMissed, emailTone, userPickedTone]);
 
+  const effectiveSignOff = useMemo(() => {
+    const base = signOffInput.trim();
+    if (!selectedSenderEmail) return base;
+    if (base.toLowerCase().includes(selectedSenderEmail.toLowerCase())) return base;
+    return base ? `${base} (${selectedSenderEmail})` : selectedSenderEmail;
+  }, [signOffInput, selectedSenderEmail]);
+
   if (!item) {
     return (
       <View style={styles.centered}>
@@ -425,13 +432,6 @@ export function RequestDetailScreen({
     preferredFormat: preferredFormatInput,
     toneStyle: emailTone,
   });
-
-  const effectiveSignOff = useMemo(() => {
-    const base = signOffInput.trim();
-    if (!selectedSenderEmail) return base;
-    if (base.toLowerCase().includes(selectedSenderEmail.toLowerCase())) return base;
-    return base ? `${base} (${selectedSenderEmail})` : selectedSenderEmail;
-  }, [signOffInput, selectedSenderEmail]);
 
   const emailBundle = buildItemEmailHandoff(item, agency, {
     requesterSignOff: effectiveSignOff,
