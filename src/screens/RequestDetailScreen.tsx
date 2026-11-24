@@ -1205,13 +1205,13 @@ export function RequestDetailScreen({
               <Text style={styles.chipBtnText}>Copy To</Text>
             </Pressable>
             <Pressable
-              onPress={() => void handleCopySingleField('Subject', composerSubject || item.title || '')}
+              onPress={() => void handleCopySingleField('Subject', effectiveSubject || item.title || '')}
               style={styles.chipBtn}
             >
               <Text style={styles.chipBtnText}>Copy Subject</Text>
             </Pressable>
             <Pressable
-              onPress={() => void handleCopySingleField('Body', composerBody || item.summary || '')}
+              onPress={() => void handleCopySingleField('Body', effectiveBody || '')}
               style={styles.chipBtn}
             >
               <Text style={styles.chipBtnText}>Copy Body</Text>
