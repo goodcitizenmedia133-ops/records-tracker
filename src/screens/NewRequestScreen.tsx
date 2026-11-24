@@ -18,8 +18,37 @@ interface NewRequestScreenProps {
 const STATUTE_LIST: StatuteCode[] = ['CORA', 'CCJRA', 'MIFOIA', 'FOIA'];
 
 export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRequestScreenProps) {
+  const [selectedStateCode, setSelectedStateCode] = useState<'CO' | 'MI' | 'US'>('CO');
   const [statuteCode, setStatuteCode] = useState<StatuteCode>('CORA');
   const [statuteManuallyPicked, setStatuteManuallyPicked] = useState(false);
+
+  const stateStatuteChoices: StatuteCode[] =
+    selectedStateCode === 'MI'
+      ? ['MIFOIA']
+      : selectedStateCode === 'US'
+        ? ['FOIA']
+        : ['CORA', 'CCJRA'];
+
+  const handleSelectState = (nextState: 'CO' | 'MI' | 'US') => {
+    setSelectedStateCode(nextState);
+    setStatuteManuallyPicked(true);
+    if (nextState === 'MI') {
+      setStatuteCode('MIFOIA');
+    } else if (nextState === 'US') {
+      setStatuteCode('FOIA');
+    } else {
+      setStatuteCode((prev) => (prev === 'CORA' || prev === 'CCJRA' ? prev : 'CORA'));
+    }
+    setAgencyName((prevAgency) => {
+      const trimmed = prevAgency.trim().toLowerCase();
+      if (!trimmed) return '';
+      const match = savedAgencies.find((a) => a.name.toLowerCase() === trimmed);
+      if (match && match.stateCode && match.stateCode.toUpperCase() !== nextState) {
+        return '';
+      }
+      return prevAgency;
+    });
+  };
   const [agencyName, setAgencyName] = useState('');
   const [custodianEmail, setCustodianEmail] = useState('');
   const [title, setTitle] = useState('');
@@ -61,8 +90,16 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
     }
   }, [classification.suggestedStatute, statuteManuallyPicked, wizardPrompt.length]);
 
-  const jurisdiction: JurisdictionCode = statuteCode === 'FOIA' ? 'US-FED' : 'US-CO';
-  const stateCode = statuteCode === 'FOIA' ? 'US' : statuteCode === 'MIFOIA' ? 'MI' : 'CO';
+  const stateCode: 'CO' | 'MI' | 'US' = selectedStateCode;
+  const jurisdiction: JurisdictionCode = stateCode === 'US' ? 'US-FED' : 'US-CO';
+
+  const visibleSavedAgencies = useMemo(() => {
+    return savedAgencies.filter((ag) => {
+      const agState = (ag.stateCode || '').trim().toUpperCase();
+      if (!agState) return stateCode === 'CO';
+      return agState === stateCode;
+    });
+  }, [savedAgencies, stateCode]);
 
   const matchingAgencies = useMemo(() => {
     const q = agencyName.trim().toLowerCase();
@@ -82,11 +119,28 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
   );
 
   const handleSelectSavedAgency = (agency: AgencyRecord) => {
+    const agState = (agency.stateCode || '').trim().toUpperCase();
+    const resolvedState: 'CO' | 'MI' | 'US' =
+      agState === 'MI' || agency.defaultStatute === 'MIFOIA'
+        ? 'MI'
+        : agState === 'US' || agency.defaultStatute === 'FOIA'
+          ? 'US'
+          : 'CO';
+    setSelectedStateCode(resolvedState);
     setAgencyName(agency.name);
     if (agency.contactEmail) setCustodianEmail(agency.contactEmail);
     const upperStatute = (agency.defaultStatute || '').toUpperCase();
-    if (upperStatute === 'CORA' || upperStatute === 'CCJRA' || upperStatute === 'MIFOIA' || upperStatute === 'FOIA') {
+    if (resolvedState === 'MI') {
+      setStatuteCode('MIFOIA');
+      setStatuteManuallyPicked(true);
+    } else if (resolvedState === 'US') {
+      setStatuteCode('FOIA');
+      setStatuteManuallyPicked(true);
+    } else if (upperStatute === 'CORA' || upperStatute === 'CCJRA') {
       setStatuteCode(upperStatute);
+      setStatuteManuallyPicked(true);
+    } else {
+      setStatuteCode('CORA');
       setStatuteManuallyPicked(true);
     }
   };
@@ -269,37 +323,56 @@ export function NewRequestScreen({ onBack, onCancel, onCreated, onSaved }: NewRe
       <Text style={styles.title}>Build Public Records Request</Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Statute (Auto-Suggested: {classification.suggestedStatute} · Vault: {jurisdiction})</Text>
-        <View style={styles.row}>
-          {STATUTE_LIST.map((code) => (
-            <Pressable
-              key={code}
-              onPress={() => {
-                setStatuteCode(code);
-                setStatuteManuallyPicked(true);
-              }}
-              style={[styles.chip, statuteCode === code && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, statuteCode === code && styles.chipTextActive]}>
-                {code}
-              </Text>
-            </Pressable>
-          ))}
+        <Text style={styles.label}>State / Jurisdiction</Text>
+        <View style={styles.chipRow}>
+          {(
+            [
+              { code: 'CO', label: 'Colorado' },
+              { code: 'MI', label: 'Michigan' },
+              { code: 'US', label: 'Federal (US)' },
+            ] as const
+          ).map((st) => {
+            const active = selectedStateCode === st.code;
+            return (
+              <Pressable
+                key={st.code}
+                onPress={() => handleSelectState(st.code)}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>{st.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
-        {wizardPrompt.length > 0 && statuteManuallyPicked && statuteCode !== classification.suggestedStatute ? (
-          <Pressable
-            onPress={() => {
-              setStatuteCode(classification.suggestedStatute);
-              setStatuteManuallyPicked(false);
-            }}
-          >
-            <Text style={styles.autoSuggestLink}>
-              Use predictive suggestion: {classification.suggestedStatute}
-            </Text>
-          </Pressable>
-        ) : null}
 
-        <Text style={styles.label}>Agency Name</Text>
+        <Text style={styles.label}>
+          {selectedStateCode === 'MI'
+            ? 'Michigan Statute (MCL 15.231 et seq.)'
+            : selectedStateCode === 'US'
+              ? 'Federal Statute (5 U.S.C. § 552)'
+              : 'Colorado Statutes (CORA / CCJRA)'}
+        </Text>
+        <View style={styles.chipRow}>
+          {stateStatuteChoices.map((code) => {
+            const active = statuteCode === code;
+            return (
+              <Pressable
+                key={code}
+                onPress={() => {
+                  setStatuteCode(code);
+                  setStatuteManuallyPicked(true);
+                }}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                  {code === 'MIFOIA' ? 'MI FOIA (MCL 15.231)' : code}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.label}>Agency Name ({selectedStateCode === 'MI' ? 'Michigan' : selectedStateCode === 'US' ? 'Federal' : 'Colorado'})</Text>
         <TextInput
           value={agencyName}
           onChangeText={setAgencyName}
@@ -445,6 +518,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '700', color: '#374151' },
   autoSuggestLink: { fontSize: 12, fontWeight: '700', color: '#1D4ED8' },
   row: { flexDirection: 'row', gap: 8 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     flex: 1,
     minHeight: 40,
