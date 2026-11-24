@@ -385,6 +385,21 @@ export function RequestDetailScreen({
     setFeedbackBanner(res.message);
   };
 
+  const livePortalUrl = (agency?.portalUrl || '').trim();
+  const hasValidPortal =
+    /^https?:\/\//i.test(livePortalUrl) && !/\.example\.(gov|com|org)(\/|$)/i.test(livePortalUrl);
+
+  const handleCopyHeaderMeta = async () => {
+    const line = [
+      emailBundle.to ? `To: ${emailBundle.to}` : null,
+      emailBundle.subject ? `Subject: ${emailBundle.subject}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    await Clipboard.setStringAsync(line || emailBundle.subject);
+    setFeedbackBanner('Recipient & subject copied to clipboard.');
+  };
+
   const handleReminder = async () => {
     const res = await scheduleDeadlineReminder(item);
     if (res.ok && item.dueDate) {
@@ -459,9 +474,15 @@ export function RequestDetailScreen({
           <Pressable onPress={handleCopyText} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Copy Email Packet</Text>
           </Pressable>
-          <Pressable onPress={handlePortal} style={styles.actionBtn}>
-            <Text style={styles.actionBtnText}>Open Portal</Text>
-          </Pressable>
+          {hasValidPortal ? (
+            <Pressable onPress={handlePortal} style={styles.actionBtn}>
+              <Text style={styles.actionBtnText}>Open Portal</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={handleCopyHeaderMeta} style={styles.actionBtn}>
+              <Text style={styles.actionBtnText}>Copy To &amp; Subject</Text>
+            </Pressable>
+          )}
           <Pressable onPress={handleReminder} style={styles.actionBtn}>
             <Text style={styles.actionBtnText}>Set 9 AM Alert</Text>
           </Pressable>
