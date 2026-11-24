@@ -639,6 +639,43 @@ export function RequestDetailScreen({
     setFeedbackBanner(res.message);
   };
 
+  const handleCopySingleField = async (label: 'To' | 'Subject' | 'Body', value: string) => {
+    const clean = (value || '').trim();
+    if (!clean) {
+      setFeedbackBanner(`No ${label} text available to copy yet.`);
+      return;
+    }
+    let copied = false;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(clean);
+        copied = true;
+      }
+    } catch {
+      // fallback below
+    }
+    if (!copied && typeof document !== 'undefined' && document.body) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = clean;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        copied = false;
+      }
+    }
+    setFeedbackBanner(
+      copied
+        ? `Copied ${label} to clipboard. Paste directly into the ${label} box.`
+        : `Could not copy ${label} automatically. Select and copy it manually.`
+    );
+  };
+
   const persistRequestSender = async (emailVal: string, labelVal?: string) => {
     setSelectedSenderEmail(emailVal);
     setPendingSwitchSender(null);
@@ -1159,6 +1196,28 @@ export function RequestDetailScreen({
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Status &amp; Response Deadline</Text>
+        {(selectedProviderByEmail[(selectedSenderEmail || item.senderEmail || '').toLowerCase()] || detectProviderComposeId(selectedSenderEmail || item.senderEmail)) === 'proton' ? (
+          <View style={styles.statusGrid}>
+            <Pressable
+              onPress={() => void handleCopySingleField('To', agency?.contactEmail || '')}
+              style={styles.chipBtn}
+            >
+              <Text style={styles.chipBtnText}>Copy To</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void handleCopySingleField('Subject', composerSubject || item.title || '')}
+              style={styles.chipBtn}
+            >
+              <Text style={styles.chipBtnText}>Copy Subject</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void handleCopySingleField('Body', composerBody || item.summary || '')}
+              style={styles.chipBtn}
+            >
+              <Text style={styles.chipBtnText}>Copy Body</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {handoffAwaitingSend && item.status !== 'sent' ? (
           <Text style={styles.mutedText}>
             After sending in your email client (Proton, webmail, or mail app), tap below so the tracker records SENT and starts the response clock.
